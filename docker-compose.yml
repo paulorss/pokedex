@@ -37,3 +37,4 @@ volumes:
     name: pokedex_artwork
   pokedex_sprites:
     name: pokedex_sprites
+

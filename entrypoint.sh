@@ -30,5 +30,12 @@ fi
 # Define porta (Dokploy injeta PORT automaticamente se configurado, ou usa 8000)
 PORT="${PORT:-8000}"
 
+if [ -n "${APP_PASSWORD}" ] || [ -n "${POKEDEX_PASSWORD}" ] || [ -n "${ACCESS_CODE}" ]; then
+    echo "🔒 Proteção por senha ATIVADA via variável de ambiente."
+else
+    echo "🔓 Modo livre (sem senha configurada)."
+fi
+
 echo "• Iniciando servidor na porta ${PORT}..."
 exec python -m uvicorn app.server:app --host 0.0.0.0 --port "${PORT}"
+

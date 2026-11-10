@@ -2,10 +2,12 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
   <meta name="theme-color" content="#dc0a2d" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>Pokédex Local</title>
-  <link rel="icon" href="img/sprites/25.png" />
+  <link rel="icon" href="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -18,8 +20,23 @@
       <nav class="tabs">
         <button class="tab active" data-view="scanner">📷 Scanner</button>
         <button class="tab" data-view="browse">📖 Pokédex</button>
+        <button class="tab" id="btnLock" style="display:none" title="Bloquear Pokédex">🔒</button>
       </nav>
     </header>
+
+    <!-- ===== Tela de Bloqueio por Senha (Dokploy / Produção) ===== -->
+    <div id="authOverlay" class="auth-overlay" style="display:none">
+      <div class="auth-card">
+        <div class="big-lens" style="margin: 0 auto 12px;"><div class="glow"></div></div>
+        <h2>🔒 Acesso de Treinador</h2>
+        <p>Esta Pokédex está protegida. Digite o código de acesso para desbloquear o scanner:</p>
+        <form id="authForm" onsubmit="return false;">
+          <input type="password" id="authPassword" class="form-input" placeholder="Código de acesso..." autocomplete="current-password" required />
+          <button id="btnAuthSubmit" class="btn shoot" style="width:100%;margin-top:12px">Desbloquear Pokédex</button>
+        </form>
+        <div id="authMsg" style="margin-top:10px;font-size:13px;color:#d32f2f;font-weight:600"></div>
+      </div>
+    </div>
 
     <main>
       <!-- ===== Scanner ===== -->
@@ -33,15 +50,22 @@
               <div class="reticle"><span></span><span></span><span></span><span></span></div>
               <div class="scanline" id="scanline" hidden></div>
               <div class="cam-msg" id="camMsg">Toque em “Ligar câmera”</div>
+              <div class="auto-badge" id="autoBadge" style="display:none">⚡ AUTO-SCAN ATIVO</div>
             </div>
           </div>
           <div class="controls">
             <button id="btnCam" class="btn">🎥 Ligar câmera</button>
-            <button id="btnFlip" class="btn small" title="Trocar câmera" hidden>🔄</button>
+            <button id="btnFlip" class="btn small" title="Trocar câmera" style="display:none">🔄</button>
             <button id="btnShot" class="btn shoot" disabled>⚡ Capturar</button>
             <label class="btn">🖼️ Enviar foto<input id="file" type="file" accept="image/*" hidden /></label>
           </div>
-          <label class="auto"><input type="checkbox" id="autoScan" /> Escanear automaticamente (a cada 2 s)</label>
+          <div class="auto-toggle-container">
+            <label class="auto-switch">
+              <input type="checkbox" id="autoScan" />
+              <span class="slider"></span>
+            </label>
+            <span class="auto-label">Escanear automaticamente em tempo real</span>
+          </div>
           <div id="candidates" class="candidates"></div>
         </div>
 
@@ -49,7 +73,7 @@
           <div class="screen-frame">
             <div class="screen info" id="result">
               <div class="placeholder">
-                <img src="img/sprites/25.png" alt="" />
+                <img src="img/sprites/25.png" alt="" onerror="this.onerror=null;this.src='https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png'" />
                 <p>Aponte a câmera para um Pokémon (desenho, carta, brinquedo ou tela) e toque em <b>Capturar</b>.</p>
               </div>
             </div>

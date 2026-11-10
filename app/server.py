@@ -6,6 +6,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import secrets
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -13,8 +14,12 @@ from pathlib import Path
 os.environ.setdefault("KERAS_BACKEND", "torch")
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+# Variável de ambiente para proteção por senha (configurada no Dokploy)
+APP_PASSWORD = os.environ.get("APP_PASSWORD") or os.environ.get("POKEDEX_PASSWORD") or os.environ.get("ACCESS_CODE") or ""
+AUTH_TOKEN = secrets.token_hex(24) if APP_PASSWORD else ""
+
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 
@@ -62,6 +67,39 @@ async def lifespan(_app):
 app = FastAPI(title="Pokédex Local", lifespan=lifespan)
 
 
+def check_auth(authorization: str | None = Header(None)):
+    """Verifica se a aplicação exige senha e valida o token Bearer."""
+    if not APP_PASSWORD:
+        return True
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Código de acesso necessário.")
+    parts = authorization.split()
+    if len(parts) == 2 and parts[0].lower() == "bearer" and secrets.compare_digest(parts[1], AUTH_TOKEN):
+        return True
+    raise HTTPException(status_code=401, detail="Código de acesso inválido ou expirado.")
+
+
+@app.get("/api/auth/status")
+def auth_status(authorization: str | None = Header(None)):
+    if not APP_PASSWORD:
+        return {"required": False, "authenticated": True}
+    is_authed = False
+    if authorization:
+        parts = authorization.split()
+        if len(parts) == 2 and parts[0].lower() == "bearer" and secrets.compare_digest(parts[1], AUTH_TOKEN):
+            is_authed = True
+    return {"required": True, "authenticated": is_authed}
+
+
+@app.post("/api/auth/login")
+async def auth_login(password: str = Form(...)):
+    if not APP_PASSWORD:
+        return {"ok": True, "token": "open"}
+    if secrets.compare_digest(password.strip(), APP_PASSWORD.strip()):
+        return {"ok": True, "token": AUTH_TOKEN}
+    raise HTTPException(status_code=401, detail="Código de acesso incorreto.")
+
+
 @app.get("/api/health")
 def health():
     return {
@@ -73,19 +111,41 @@ def health():
     }
 
 
-@app.get("/api/pokemon")
+def format_pokemon(p: dict) -> dict:
+    """Garante que sprites e artworks tenham URLs funcionais mesmo em ambientes Docker."""
+    p_copy = dict(p)
+    pid = p.get("id", 1)
+    img_rel = p.get("image", "")
+    sprite_rel = p.get("sprite", "")
+
+    # Se a imagem local não existir no servidor (ex: Dokploy/Docker limpo), usa CDN oficial
+    if not (WEB / img_rel).exists() or not img_rel:
+        p_copy["image"] = f"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/{pid}.png"
+    if not (WEB / sprite_rel).exists() or not sprite_rel:
+        p_copy["sprite"] = f"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/{pid}.png"
+    return p_copy
+
+
+@app.get("/api/pokemon", dependencies=[Depends(check_auth)])
 def list_pokemon():
-    return [{k: p[k] for k in ("id", "name", "types", "types_pt", "sprite", "image")} for p in POKEMON]
+    return [{
+        "id": p["id"],
+        "name": p["name"],
+        "types": p["types"],
+        "types_pt": p["types_pt"],
+        "sprite": format_pokemon(p)["sprite"],
+        "image": format_pokemon(p)["image"],
+    } for p in POKEMON]
 
 
-@app.get("/api/pokemon/{pid}")
+@app.get("/api/pokemon/{pid}", dependencies=[Depends(check_auth)])
 def get_pokemon(pid: int):
     if pid not in POKEMON_BY_ID:
         raise HTTPException(404, "Pokémon não encontrado")
-    return POKEMON_BY_ID[pid]
+    return format_pokemon(POKEMON_BY_ID[pid])
 
 
-@app.post("/api/predict")
+@app.post("/api/predict", dependencies=[Depends(check_auth)])
 async def api_predict(file: UploadFile = File(...)):
     try:
         img = Image.open(io.BytesIO(await file.read()))
@@ -98,7 +158,7 @@ async def api_predict(file: UploadFile = File(...)):
 
     out = []
     for r in results:
-        p = POKEMON_BY_ID[r["id"]]
+        p = format_pokemon(POKEMON_BY_ID[r["id"]])
         out.append({
             "label": p["name"],
             "confidence": r["confidence"],
@@ -108,7 +168,7 @@ async def api_predict(file: UploadFile = File(...)):
     return {"results": out}
 
 
-@app.post("/api/feedback")
+@app.post("/api/feedback", dependencies=[Depends(check_auth)])
 async def api_feedback(pokemon_id: int = Form(...), file: UploadFile = File(...)):
     """Permite ao usuário ensinar/confirmar o Pokémon correto de uma foto."""
     if pokemon_id not in POKEMON_BY_ID:
@@ -142,7 +202,7 @@ TYPE_PT_MAP = {
 }
 
 
-@app.post("/api/register_custom")
+@app.post("/api/register_custom", dependencies=[Depends(check_auth)])
 async def api_register_custom(
     name: str = Form(...),
     type1: str = Form(...),

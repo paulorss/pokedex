@@ -22,13 +22,47 @@ let busy = false;
 let autoTimer = null;
 let lastCapturedBlob = null;
 
+const POKE_ART_URL = (id) => `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`;
+const POKE_SPRITE_URL = (id) => `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`;
+
+let authToken = localStorage.getItem("pokedex_auth_token") || "";
+
+async function authFetch(url, options = {}) {
+  const opts = { ...options };
+  opts.headers = new Headers(opts.headers || {});
+  if (authToken) {
+    opts.headers.set("Authorization", `Bearer ${authToken}`);
+  }
+  const res = await fetch(url, opts);
+  if (res.status === 401) {
+    authToken = "";
+    localStorage.removeItem("pokedex_auth_token");
+    showAuthOverlay();
+    throw new Error("Acesso não autorizado. Código de acesso necessário.");
+  }
+  return res;
+}
+
+function showAuthOverlay() {
+  const overlay = $("#authOverlay");
+  if (overlay) overlay.style.display = "grid";
+  $("#btnLock") && ($("#btnLock").style.display = "none");
+  setTimeout(() => $("#authPassword")?.focus(), 100);
+}
+
+function hideAuthOverlay() {
+  const overlay = $("#authOverlay");
+  if (overlay) overlay.style.display = "none";
+  $("#btnLock") && ($("#btnLock").style.display = "inline-block");
+}
+
 /* ---------------- utilidades ---------------- */
 const pad = (n) => String(n).padStart(3, "0");
 const typeBadge = (t) => `<span class="type t-${t}">${TYPE_PT[t] || t}</span>`;
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 async function getPokemon(id) {
-  if (!cache.has(id)) cache.set(id, await fetch(`/api/pokemon/${id}`).then((r) => r.json()));
+  if (!cache.has(id)) cache.set(id, await authFetch(`/api/pokemon/${id}`).then((r) => r.json()));
   return cache.get(id);
 }
 function setBusy(on) {
@@ -53,8 +87,8 @@ function renderDetail(p, confidence = null) {
   const evo = p.evolution.length > 1 ? p.evolution.map((stage) => `
       <div class="stage">${stage.map((id) => {
         const e = ALL.find((x) => x.id === id);
-        return `<button data-id="${id}" class="${id === p.id ? "cur" : ""}"><img src="img/sprites/${id}.png" alt=""><span>${esc(e?.name || id)}</span></button>`;
-      }).join("")}</div>`).join('<span class="arrow">➜</span>') : "<small>Este Pokémon não evolui (na 1ª geração).</small>";
+        return `<button data-id="${id}" class="${id === p.id ? "cur" : ""}"><img src="${e?.sprite || POKE_SPRITE_URL(id)}" alt="" onerror="this.onerror=null;this.src='${POKE_SPRITE_URL(id)}'"><span>${esc(e?.name || id)}</span></button>`;
+      }).join("")}</div>`).join('<span class="arrow">➜</span>') : "<small>Este Pokémon não possui evolução nesta geração.</small>";
 
   return `
     <div class="dex-head">
@@ -65,7 +99,7 @@ function renderDetail(p, confidence = null) {
     <div class="dex-body">
       <div>
         <div class="art">
-          <img class="main" src="${p.image}" alt="${esc(p.name)}">
+          <img class="main" src="${p.image}" alt="${esc(p.name)}" onerror="this.onerror=null;this.src='${POKE_ART_URL(p.id)}'">
           ${p.animated ? `<img class="anim" src="${p.animated}" alt="" onerror="this.remove()">` : ""}
         </div>
         <div class="types">${p.types.map(typeBadge).join("")}${p.is_legendary ? '<span class="type" style="background:#d4af37">Lendário</span>' : ""}${p.is_mythical ? '<span class="type" style="background:#b388ff">Mítico</span>' : ""}</div>
@@ -176,8 +210,10 @@ async function startCamera() {
     $("#camMsg").hidden = true;
     $("#btnShot").disabled = false;
     $("#btnCam").textContent = "⏹️ Desligar";
-    const cams = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput");
-    $("#btnFlip").hidden = cams.length < 2;
+    try {
+      const cams = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput");
+      $("#btnFlip").style.display = cams.length > 1 ? "inline-flex" : "none";
+    } catch (_) {}
   } catch (err) {
     $("#camMsg").hidden = false;
     $("#camMsg").textContent = "Não foi possível acessar a câmera: " + err.message;
@@ -188,6 +224,12 @@ function stopCamera() {
   stream = null;
   $("#btnShot").disabled = true;
   $("#btnCam").textContent = "🎥 Ligar câmera";
+  $("#btnFlip").style.display = "none";
+  if ($("#autoScan").checked) {
+    $("#autoScan").checked = false;
+    clearInterval(autoTimer);
+    $("#autoBadge").style.display = "none";
+  }
 }
 
 /** Recorta o quadrado central (área da mira) do vídeo. */
@@ -216,12 +258,15 @@ async function classify(blob, previewUrl) {
   try {
     const fd = new FormData();
     fd.append("file", blob, "captura.jpg");
-    const r = await fetch("/api/predict", { method: "POST", body: fd });
+    const r = await authFetch("/api/predict", { method: "POST", body: fd });
     if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
     const { results } = await r.json();
     results.forEach((x) => cache.set(x.pokemon.id, x.pokemon));
     renderCandidates(results);
     await showResult(results[0].pokemon.id, results[0].confidence);
+    if ("vibrate" in navigator && results[0].confidence > 0.4) {
+      navigator.vibrate([40, 50, 40]);
+    }
   } catch (err) {
     $("#result").innerHTML = `<div class="placeholder"><p>❌ Erro: ${esc(err.message)}</p></div>`;
   } finally {
@@ -233,7 +278,7 @@ function renderCandidates(results) {
   const el = $("#candidates");
   el.innerHTML = results.map((r, i) => `
     <div class="cand ${i === 0 ? "sel" : ""}" data-id="${r.pokemon.id}" data-c="${r.confidence}">
-      <img src="${r.pokemon.sprite}" alt=""><b>${esc(r.pokemon.name)}</b>
+      <img src="${r.pokemon.sprite}" alt="" onerror="this.onerror=null;this.src='${POKE_SPRITE_URL(r.pokemon.id)}'"><b>${esc(r.pokemon.name)}</b>
       <div class="bar"><i style="width:${(r.confidence * 100).toFixed(1)}%"></i></div>
       <small>${(r.confidence * 100).toFixed(1)}%</small></div>`).join("");
   el.querySelectorAll(".cand").forEach((c) => c.addEventListener("click", () => {
@@ -251,11 +296,14 @@ function renderGrid() {
     (!t || p.types.includes(t)) &&
     (!q || p.name.toLowerCase().includes(q) || String(p.id) === q.replace(/^#?0*/, "") ||
       p.types_pt.some((x) => x.toLowerCase().includes(q))));
-  $("#grid").innerHTML = list.map((p) => `
+  $("#grid").innerHTML = list.map((p) => {
+    const spriteUrl = p.sprite || POKE_SPRITE_URL(p.id);
+    return `
     <div class="card" data-id="${p.id}">
-      <div class="n">#${pad(p.id)}</div><img src="${p.sprite}" alt="" loading="lazy">
+      <div class="n">#${pad(p.id)}</div><img src="${spriteUrl}" alt="" loading="lazy" onerror="this.onerror=null;this.src='${POKE_SPRITE_URL(p.id)}'">
       <div class="nm">${esc(p.name)}</div><div class="types">${p.types.map(typeBadge).join("")}</div>
-    </div>`).join("");
+    </div>`;
+  }).join("");
 }
 
 /* ---------------- eventos ---------------- */
@@ -276,11 +324,20 @@ $("#file").addEventListener("change", (e) => {
   if (f) classify(f, URL.createObjectURL(f));
   e.target.value = "";
 });
-$("#autoScan").addEventListener("change", (e) => {
+$("#autoScan").addEventListener("change", async (e) => {
   clearInterval(autoTimer);
+  const badge = $("#autoBadge");
   if (e.target.checked) {
-    if (!stream) startCamera();
-    autoTimer = setInterval(async () => { if (stream && !busy) classify(await grabFrame()); }, 2000);
+    badge.style.display = "block";
+    if (!stream) await startCamera();
+    autoTimer = setInterval(async () => {
+      if (stream && !busy) {
+        const blob = await grabFrame();
+        classify(blob);
+      }
+    }, 2200);
+  } else {
+    badge.style.display = "none";
   }
 });
 $("#search").addEventListener("input", renderGrid);
@@ -319,7 +376,7 @@ $("#btnTeachSubmit")?.addEventListener("click", async () => {
     const fd = new FormData();
     fd.append("pokemon_id", pid);
     fd.append("file", lastCapturedBlob, "sample.jpg");
-    const r = await fetch("/api/feedback", { method: "POST", body: fd });
+    const r = await authFetch("/api/feedback", { method: "POST", body: fd });
     const j = await r.json();
     if (!r.ok) throw new Error(j.detail || "Erro ao salvar");
     st.textContent = "✔ " + j.message;
@@ -364,7 +421,7 @@ $("#btnCreatePokeSubmit")?.addEventListener("click", async () => {
     fd.append("description", desc);
     fd.append("file", lastCapturedBlob, "new_pokemon.jpg");
 
-    const r = await fetch("/api/register_custom", { method: "POST", body: fd });
+    const r = await authFetch("/api/register_custom", { method: "POST", body: fd });
     const j = await r.json();
     if (!r.ok) throw new Error(j.detail || "Erro ao registrar");
 
@@ -398,14 +455,67 @@ window.addEventListener("paste", (e) => {
   if (item) { const f = item.getAsFile(); classify(f, URL.createObjectURL(f)); }
 });
 
-/* ---------------- init ---------------- */
-(async function init() {
-  ALL = await fetch("/api/pokemon").then((r) => r.json());
+// Eventos de Autenticação / Senha
+$("#btnAuthSubmit")?.addEventListener("click", async () => {
+  const pwd = $("#authPassword").value;
+  const msg = $("#authMsg");
+  msg.textContent = "";
+  if (!pwd) return;
+
+  const fd = new FormData();
+  fd.append("password", pwd);
+  try {
+    const res = await fetch("/api/auth/login", { method: "POST", body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Código incorreto");
+    authToken = data.token;
+    localStorage.setItem("pokedex_auth_token", authToken);
+    hideAuthOverlay();
+    $("#authPassword").value = "";
+    await loadInitialData();
+  } catch (err) {
+    msg.textContent = "❌ " + err.message;
+  }
+});
+
+$("#btnLock")?.addEventListener("click", () => {
+  authToken = "";
+  localStorage.removeItem("pokedex_auth_token");
+  showAuthOverlay();
+});
+
+async function loadInitialData() {
+  ALL = await authFetch("/api/pokemon").then((r) => r.json());
+  const tf = $("#typeFilter");
+  tf.innerHTML = '<option value="">Todos os tipos</option>';
+  $("#newPokeType1") && ($("#newPokeType1").innerHTML = "");
+  $("#newPokeType2") && ($("#newPokeType2").innerHTML = '<option value="">Nenhum</option>');
+
   Object.entries(TYPE_PT).forEach(([k, v]) => {
-    if (ALL.some((p) => p.types.includes(k))) $("#typeFilter").insertAdjacentHTML("beforeend", `<option value="${k}">${v}</option>`);
+    if (ALL.some((p) => p.types.includes(k))) tf.insertAdjacentHTML("beforeend", `<option value="${k}">${v}</option>`);
     $("#newPokeType1")?.insertAdjacentHTML("beforeend", `<option value="${k}">${v}</option>`);
     $("#newPokeType2")?.insertAdjacentHTML("beforeend", `<option value="${k}">${v}</option>`);
   });
   renderGrid();
+}
+
+/* ---------------- init ---------------- */
+(async function init() {
+  try {
+    const status = await fetch("/api/auth/status", {
+      headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+    }).then((r) => r.json());
+
+    if (status.required && !status.authenticated) {
+      showAuthOverlay();
+      return;
+    }
+    if (status.required) {
+      $("#btnLock") && ($("#btnLock").style.display = "inline-block");
+    }
+    await loadInitialData();
+  } catch (err) {
+    console.error("Erro na inicialização:", err);
+  }
 })();
 

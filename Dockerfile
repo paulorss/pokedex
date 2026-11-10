@@ -46,3 +46,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 
 # Ponto de entrada que baixa dados ausentes na primeira vez e sobe o Uvicorn
 ENTRYPOINT ["./entrypoint.sh"]
+
