@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#dc0a2d" />
+  <title>Pokédex Local</title>
+  <link rel="icon" href="img/sprites/25.png" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="pokedex">
+    <!-- ===== Topo ===== -->
+    <header class="top">
+      <div class="big-lens"><div class="glow"></div></div>
+      <div class="leds"><span class="led red"></span><span class="led yellow"></span><span class="led green" id="statusLed"></span></div>
+      <h1>POKÉDEX</h1>
+      <nav class="tabs">
+        <button class="tab active" data-view="scanner">📷 Scanner</button>
+        <button class="tab" data-view="browse">📖 Pokédex</button>
+      </nav>
+    </header>
+
+    <main>
+      <!-- ===== Scanner ===== -->
+      <section id="view-scanner" class="view active">
+        <div class="panel left">
+          <div class="screen-frame">
+            <div class="screen camera">
+              <video id="video" autoplay playsinline muted></video>
+              <canvas id="canvas" hidden></canvas>
+              <img id="preview" alt="" hidden />
+              <div class="reticle"><span></span><span></span><span></span><span></span></div>
+              <div class="scanline" id="scanline" hidden></div>
+              <div class="cam-msg" id="camMsg">Toque em “Ligar câmera”</div>
+            </div>
+          </div>
+          <div class="controls">
+            <button id="btnCam" class="btn">🎥 Ligar câmera</button>
+            <button id="btnFlip" class="btn small" title="Trocar câmera" hidden>🔄</button>
+            <button id="btnShot" class="btn shoot" disabled>⚡ Capturar</button>
+            <label class="btn">🖼️ Enviar foto<input id="file" type="file" accept="image/*" hidden /></label>
+          </div>
+          <label class="auto"><input type="checkbox" id="autoScan" /> Escanear automaticamente (a cada 2 s)</label>
+          <div id="candidates" class="candidates"></div>
+        </div>
+
+        <div class="panel right">
+          <div class="screen-frame">
+            <div class="screen info" id="result">
+              <div class="placeholder">
+                <img src="img/sprites/25.png" alt="" />
+                <p>Aponte a câmera para um Pokémon (desenho, carta, brinquedo ou tela) e toque em <b>Capturar</b>.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Navegar ===== -->
+      <section id="view-browse" class="view">
+        <div class="browse-bar">
+          <input id="search" type="search" placeholder="Buscar por nome, número ou tipo..." />
+          <select id="typeFilter"><option value="">Todos os tipos</option></select>
+        </div>
+        <div id="grid" class="grid"></div>
+      </section>
+    </main>
+  </div>
+
+  <!-- ===== Modal de detalhes ===== -->
+  <dialog id="modal">
+    <button class="close" id="modalClose">✕</button>
+    <div id="modalBody" class="screen info"></div>
+  </dialog>
+
+  <!-- ===== Modal de correção / ensinar ===== -->
+  <dialog id="teachModal">
+    <button class="close" id="teachClose">✕</button>
+    <div class="teach-box">
+      <h3>🎯 Ensinar Pokédex</h3>
+      <div class="teach-tabs">
+        <button id="tabTeachExisting" class="teach-tab active">Existente</button>
+        <button id="tabTeachNew" class="teach-tab">➕ Cadastrar Novo</button>
+      </div>
+
+      <!-- Modo 1: Escolher existente -->
+      <div id="sectionTeachExisting">
+        <p>Selecione o Pokémon correto correspondente a esta imagem:</p>
+        <select id="teachSelect" class="teach-select"></select>
+        <button id="btnTeachSubmit" class="btn shoot" style="margin-top:14px;width:100%">Confirmar e Aprender</button>
+      </div>
+
+      <!-- Modo 2: Cadastrar novo -->
+      <form id="sectionTeachNew" style="display:none" onsubmit="return false;">
+        <p>Preencha os dados básicos do novo Pokémon para registrá-lo:</p>
+        <div class="form-group">
+          <label>Nome do Pokémon: *</label>
+          <input type="text" id="newPokeName" class="form-input" placeholder="Ex: Lucario, Bulbasaur Especial..." required />
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="flex:1">
+            <label>Tipo 1 (Classe): *</label>
+            <select id="newPokeType1" class="form-input" required></select>
+          </div>
+          <div class="form-group" style="flex:1">
+            <label>Tipo 2 (Opcional):</label>
+            <select id="newPokeType2" class="form-input"><option value="">Nenhum</option></select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Espécie / Categoria:</label>
+          <input type="text" id="newPokeGenus" class="form-input" placeholder="Ex: Pokémon Aura, Seed Pokémon..." />
+        </div>
+        <div class="form-group">
+          <label>Descrição:</label>
+          <textarea id="newPokeDesc" class="form-input" rows="2" placeholder="Características marcantes, habitat, etc."></textarea>
+        </div>
+        <button id="btnCreatePokeSubmit" class="btn shoot" style="margin-top:10px;width:100%">Salvar Novo Pokémon</button>
+      </form>
+
+      <div id="teachStatus" style="margin-top:10px;font-size:13px;text-align:center;font-weight:600"></div>
+    </div>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
+

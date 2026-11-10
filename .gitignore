@@ -1,0 +1,20 @@
+# Ambientes virtuais e cache
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.cache/
+
+# Certificados locais
+certs/
+
+# Modelos pesados e datasets volumosos
+model/
+data/dataset/
+data/raw/
+data/clip_index.npz
+data/user_samples/
+
+# Imagens baixadas dinamicamente
+web/img/artwork/
+web/img/sprites/

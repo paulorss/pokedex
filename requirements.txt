@@ -1,0 +1,11 @@
+torch          # instale a versão CPU: pip install torch --index-url https://download.pytorch.org/whl/cpu
+keras>=3.9
+safetensors
+numpy
+pillow
+fastapi
+uvicorn[standard]
+python-multipart
+requests
+cryptography
+
