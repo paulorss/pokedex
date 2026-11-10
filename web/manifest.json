@@ -1,0 +1,23 @@
+{
+  "name": "Pokédex Local",
+  "short_name": "Pokédex",
+  "description": "Pokédex web inteligente com reconhecimento de câmera para figuras reais 3D e cartas",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#2b2b2b",
+  "theme_color": "#dc0a2d",
+  "icons": [
+    {
+      "src": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png",
+      "sizes": "96x96",
+      "type": "image/png"
+    },
+    {
+      "src": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/25.png",
+      "sizes": "475x475",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
