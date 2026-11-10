@@ -39,6 +39,25 @@ Navegador (câmera / upload)  ──POST /api/predict──▶  FastAPI + Keras 
 | [Kaggle rounakbanik/pokemon](https://www.kaggle.com/datasets/rounakbanik/pokemon) | Opcional: salve `pokemon.csv` em `data/raw/` e rode `python scripts/build_data.py` de novo (adiciona nome japonês etc.) |
 | [cam-hm/pokedex-ai](https://github.com/cam-hm/pokedex-ai) | Inspiração da interface (status, fraquezas, evolução) |
 
+## Deploy no Dokploy (Docker)
+
+Esta aplicação está 100% pronta para deploy com 1 clique no **[Dokploy](https://dokploy.com)**:
+
+### Opção A: Via Git Repository no Dokploy (Recomendado)
+1. No painel do Dokploy, crie uma nova **Application**.
+2. Conecte ao GitHub e selecione o repositório `paulorss/pokedex` (branch `main`).
+3. Em **Build Type**, selecione **Dockerfile** (ou **Docker Compose**).
+4. Em **Port**, defina `8000`.
+5. Em **Domains**, aponte seu domínio (o Dokploy gera certificado SSL automático com Let's Encrypt, liberando a câmera em qualquer celular ou dispositivo!).
+6. Clique em **Deploy**!
+
+### Opção B: Via Docker Compose
+```bash
+docker compose up -d --build
+```
+
+---
+
 ## Estrutura
 ```
 app/server.py          API + carregamento do modelo

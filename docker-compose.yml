@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  pokedex:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pokedex:latest
+    container_name: pokedex
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      - PORT=8000
+      - KERAS_BACKEND=torch
+      - HF_HUB_DISABLE_SYMLINKS_WARNING=1
+      - POKEDEX_CLIP=openai/clip-vit-base-patch16 # ou clip-vit-large-patch14 se o servidor tiver 4GB+ RAM
+    volumes:
+      # Volumes persistentes para manter modelos, novos Pokémon e fotos
+      - pokedex_models:/app/model
+      - pokedex_data:/app/data/user_samples
+      - pokedex_artwork:/app/web/img/artwork
+      - pokedex_sprites:/app/web/img/sprites
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  pokedex_models:
+    name: pokedex_models
+  pokedex_data:
+    name: pokedex_data
+  pokedex_artwork:
+    name: pokedex_artwork
+  pokedex_sprites:
+    name: pokedex_sprites
