@@ -245,6 +245,15 @@ function grabFrame() {
   return new Promise((res) => c.toBlob(res, "image/jpeg", 0.92));
 }
 
+async function readJson(r) {
+  const txt = await r.text();
+  try {
+    return JSON.parse(txt);
+  } catch {
+    return { detail: txt || r.statusText || `Erro HTTP ${r.status}` };
+  }
+}
+
 async function classify(blob, previewUrl) {
   if (busy) return;
   lastCapturedBlob = blob;
@@ -259,8 +268,9 @@ async function classify(blob, previewUrl) {
     const fd = new FormData();
     fd.append("file", blob, "captura.jpg");
     const r = await authFetch("/api/predict", { method: "POST", body: fd });
-    if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
-    const { results } = await r.json();
+    const j = await readJson(r);
+    if (!r.ok) throw new Error(j.detail || r.statusText);
+    const { results } = j;
     results.forEach((x) => cache.set(x.pokemon.id, x.pokemon));
     renderCandidates(results);
     await showResult(results[0].pokemon.id, results[0].confidence);
@@ -377,7 +387,7 @@ $("#btnTeachSubmit")?.addEventListener("click", async () => {
     fd.append("pokemon_id", pid);
     fd.append("file", lastCapturedBlob, "sample.jpg");
     const r = await authFetch("/api/feedback", { method: "POST", body: fd });
-    const j = await r.json();
+    const j = await readJson(r);
     if (!r.ok) throw new Error(j.detail || "Erro ao salvar");
     st.textContent = "✔ " + j.message;
     setTimeout(() => {
@@ -422,7 +432,7 @@ $("#btnCreatePokeSubmit")?.addEventListener("click", async () => {
     fd.append("file", lastCapturedBlob, "new_pokemon.jpg");
 
     const r = await authFetch("/api/register_custom", { method: "POST", body: fd });
-    const j = await r.json();
+    const j = await readJson(r);
     if (!r.ok) throw new Error(j.detail || "Erro ao registrar");
 
     st.textContent = "✔ " + j.message;

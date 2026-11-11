@@ -188,16 +188,11 @@ def main():
     # Ordena por ID
     all_pokemons.sort(key=lambda x: x["id"])
 
-    # Salva pokemon.json
+    # Salva pokemon.json (mantém data/labels.json intacto para as 151 classes do DenseNet)
     JSON_PATH.write_text(json.dumps(all_pokemons, ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"\n✔ Sucesso! {len(all_pokemons)} Pokémon salvos em data/pokemon.json!")
-
-    # Atualiza labels.json
-    labels = [p["name"] for p in all_pokemons]
-    label_to_id = {p["name"]: p["id"] for p in all_pokemons}
-    LABELS_PATH.write_text(json.dumps({"labels": labels, "label_to_id": label_to_id}, ensure_ascii=False, indent=1), encoding="utf-8")
-    print(f"✔ data/labels.json atualizado com {len(labels)} classes.")
 
 
 if __name__ == "__main__":
     main()
+

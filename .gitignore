@@ -13,6 +13,7 @@ model/
 data/dataset/
 data/raw/
 data/clip_index.npz
+data/clip_text_cache.npz
 data/user_samples/
 
 # Imagens baixadas dinamicamente

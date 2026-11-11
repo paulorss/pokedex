@@ -105,12 +105,16 @@ class ClipEncoder:
                 out.append(self._norm(self.model.get_image_features(**inp)))
         return np.concatenate(out)
 
-    def class_text(self, names: list[str]) -> np.ndarray:
+    def class_text(self, names: list[str], batch: int = 128) -> np.ndarray:
         embs = []
         with self.torch.no_grad():
             for tpl in TEMPLATES:
-                inp = self.proc(text=[tpl.format(prompt_name(n)) for n in names], return_tensors="pt", padding=True)
-                embs.append(self._norm(self.model.get_text_features(**inp)))
+                tpl_embs = []
+                for i in range(0, len(names), batch):
+                    prompts = [tpl.format(prompt_name(n)) for n in names[i:i + batch]]
+                    inp = self.proc(text=prompts, return_tensors="pt", padding=True)
+                    tpl_embs.append(self._norm(self.model.get_text_features(**inp)))
+                embs.append(np.concatenate(tpl_embs, axis=0))
         m = np.mean(embs, axis=0)
         return m / np.linalg.norm(m, axis=1, keepdims=True)
 
@@ -168,12 +172,24 @@ class Recognizer:
             if INDEX_FILE.exists():
                 z = np.load(INDEX_FILE, allow_pickle=False)
                 if str(z["model_id"]) == self.clip.model_id:
-                    self.text = z["text"].astype("float32")
-                    self.index_emb = z["emb"].astype("float32")
-                    self.index_cls = np.array([self.pos[int(i)] for i in z["ids"]])
+                    valid_mask = [int(i) in self.pos for i in z["ids"]]
+                    if any(valid_mask):
+                        self.index_emb = z["emb"][valid_mask].astype("float32")
+                        self.index_cls = np.array([self.pos[int(i)] for i, ok in zip(z["ids"], valid_mask) if ok])
+                    if z["text"].shape[0] == len(names):
+                        self.text = z["text"].astype("float32")
+            text_cache = DATA / "clip_text_cache.npz"
+            if self.text is None and text_cache.exists():
+                tc = np.load(text_cache, allow_pickle=False)
+                if str(tc["model_id"]) == self.clip.model_id and tc["text"].shape[0] == len(names):
+                    self.text = tc["text"].astype("float32")
             if self.text is None:
-                print("Índice CLIP ausente/desatualizado — rode: python scripts/build_index.py")
-                self.text = self.clip.class_text(names)
+                print(f"Gerando embeddings de texto CLIP para {len(names)} Pokémon...")
+                self.text = self.clip.class_text(names).astype("float32")
+                try:
+                    np.savez_compressed(text_cache, model_id=self.clip.model_id, text=self.text)
+                except Exception:  # noqa: BLE001
+                    pass
         except Exception as exc:  # noqa: BLE001
             print(f"[aviso] CLIP indisponível ({exc}); usando só o DenseNet.")
             self.clip = None
@@ -182,7 +198,8 @@ class Recognizer:
     def densenet_probs(self, views: list[Image.Image]) -> np.ndarray:
         p = self.densenet.predict(views).mean(axis=0)
         out = np.zeros(len(self.ids), dtype="float32")
-        out[self.dn_map] = p
+        if len(self.dn_map) == len(p):
+            out[self.dn_map] = p
         return out
 
     def zeroshot_probs(self, q: np.ndarray) -> np.ndarray:

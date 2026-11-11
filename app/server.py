@@ -8,6 +8,7 @@ import json
 import os
 import secrets
 import threading
+import traceback
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -19,7 +20,7 @@ APP_PASSWORD = os.environ.get("APP_PASSWORD") or os.environ.get("POKEDEX_PASSWOR
 AUTH_TOKEN = secrets.token_hex(24) if APP_PASSWORD else ""
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 
@@ -39,6 +40,15 @@ POKEMON_BY_ID = {p["id"]: p for p in POKEMON}
 _lab = json.loads((DATA / "labels.json").read_text(encoding="utf-8"))
 LABELS: list[str] = _lab["labels"]
 LABEL_TO_ID: dict[str, int] = _lab["label_to_id"]
+if len(LABELS) != 151 and (MODEL_DIR / "Pokemons.txt").exists():
+    _txt = [l.strip() for l in (MODEL_DIR / "Pokemons.txt").read_text(encoding="utf-8").splitlines() if l.strip()]
+    _by_norm = {
+        p["name"].lower().replace("♀", "-f").replace("♂", "-m").replace("'", "").replace(". ", "-").replace(" ", "-"): p["id"]
+        for p in POKEMON if p["id"] <= 151
+    }
+    _by_norm.update({"nidoranf": 29, "nidoranm": 32, "mr. mime": 122, "farfetch'd": 83})
+    LABELS = _txt
+    LABEL_TO_ID = {l: _by_norm[l.lower()] for l in _txt if l.lower() in _by_norm}
 
 _recognizer = None
 _rec_lock = threading.Lock()
@@ -65,6 +75,12 @@ async def lifespan(_app):
 
 
 app = FastAPI(title="Pokédex Local", lifespan=lifespan)
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(_request: Request, exc: Exception):
+    traceback.print_exc()
+    return JSONResponse(status_code=500, content={"detail": f"{type(exc).__name__}: {exc}"})
 
 
 def check_auth(authorization: str | None = Header(None)):
@@ -290,6 +306,17 @@ async def api_register_custom(
 
     print(f"✔ Novo Pokémon cadastrado: #{new_id:03d} {name} (Tipos: {types})")
     return {"ok": True, "message": f"#{new_id:03d} {name} cadastrado com sucesso!", "pokemon": new_pokemon}
+
+
+@app.get("/img/{folder}/{filename}")
+def serve_pokemon_image(folder: str, filename: str):
+    if folder not in ("artwork", "sprites") or Path(filename).name != filename:
+        raise HTTPException(404)
+    local = WEB / "img" / folder / filename
+    if local.exists():
+        return FileResponse(local)
+    sub = "pokemon/other/official-artwork" if folder == "artwork" else "pokemon"
+    return RedirectResponse(f"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/{sub}/{filename}")
 
 
 @app.get("/")
