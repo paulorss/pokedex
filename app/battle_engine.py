@@ -189,21 +189,24 @@ def team_cost(team_ids: list[int]) -> int:
     return sum(ROSTER_BY_ID[cid]["cost"] for cid in team_ids if cid in ROSTER_BY_ID)
 
 
-def validate_team(team_ids: list[int]) -> str | None:
+def validate_team(team_ids: list[int], blocked_ids: set[int] | None = None) -> str | None:
     if len(team_ids) > TEAM_SIZE:
         return f"Escolha no máximo {TEAM_SIZE} Pokémon."
     if len(set(team_ids)) != len(team_ids):
         return "Não vale repetir o mesmo Pokémon na equipe."
     if any(cid not in ROSTER_BY_ID for cid in team_ids):
         return "Um dos Pokémon escolhidos não existe na Pokédex."
+    if blocked_ids and any(cid in blocked_ids for cid in team_ids):
+        return "Um dos Pokémon escolhidos foi derrotado e está em recuperação de 24h no Centro Pokémon."
     if team_cost(team_ids) > TEAM_BUDGET:
         return f"O trio ultrapassa o limite de {TEAM_BUDGET} de Stamina."
     return None
 
 
-def auto_pick_team(partial_ids: list[int] | None = None) -> list[int]:
-    """Completa até 3 Pokémon sem ultrapassar o orçamento de Stamina (usado no fim dos 60s ou para a IA)."""
-    picked = [cid for cid in (partial_ids or []) if cid in ROSTER_BY_ID][:TEAM_SIZE]
+def auto_pick_team(partial_ids: list[int] | None = None, blocked_ids: set[int] | None = None) -> list[int]:
+    """Completa até 3 Pokémon sem ultrapassar a Stamina e ignorando Pokémon derrotados (24h)."""
+    blocked = set(blocked_ids or ())
+    picked = [cid for cid in (partial_ids or []) if cid in ROSTER_BY_ID and cid not in blocked][:TEAM_SIZE]
     used_elements = {ROSTER_BY_ID[cid]["element"] for cid in picked}
     spent = team_cost(picked)
 
@@ -211,13 +214,12 @@ def auto_pick_team(partial_ids: list[int] | None = None) -> list[int]:
         slots_left = TEAM_SIZE - len(picked)
         min_reserve = 200 * (slots_left - 1)
         max_allow = TEAM_BUDGET - spent - min_reserve
-        candidates = [c for c in ROSTER if c["id"] not in picked and c["cost"] <= max_allow]
+        candidates = [c for c in ROSTER if c["id"] not in picked and c["id"] not in blocked and c["cost"] <= max_allow]
         if not candidates:
-            # Fallback para os mais leves caso o jogador já tenha gasto quase tudo
-            candidates = sorted((c for c in ROSTER if c["id"] not in picked), key=lambda c: c["cost"])
+            candidates = sorted((c for c in ROSTER if c["id"] not in picked and c["id"] not in blocked),
+                                key=lambda c: c["cost"])
         if not candidates:
             break
-        # Prioriza variedade de tipos e Pokémon competitivos (350..560 SP) dentro do orçamento
         diverse = [c for c in candidates if c["element"] not in used_elements and 320 <= c["cost"] <= 560]
         pool = diverse or [c for c in candidates if c["element"] not in used_elements] or candidates
         chosen = random.choice(pool)
@@ -255,11 +257,16 @@ class BattleState:
     """Estado e regras de uma partida entre dois treinadores."""
 
     def __init__(self, room_id: str, p1_id: int, p1_name: str,
-                 p2_id: int | None, p2_name: str, is_bot: bool = False):
+                 p2_id: int | None, p2_name: str, is_bot: bool = False,
+                 p1_blocked: set[int] | None = None, p2_blocked: set[int] | None = None):
         self.room_id = room_id
         self.p1_id, self.p1_name = p1_id, p1_name
         self.p2_id, self.p2_name = p2_id, p2_name
         self.is_bot = is_bot
+        self.blocked_ids: dict[int, set[int]] = {
+            1: set(p1_blocked or ()),
+            2: set(p2_blocked or ()),
+        }
 
         self.phase = "DRAFT"
         self.draft_timer = DRAFT_SECONDS
@@ -290,7 +297,7 @@ class BattleState:
 
     def start_battle_from_draft(self) -> None:
         for player in (1, 2):
-            self.team_ids[player] = auto_pick_team(self.team_ids[player])
+            self.team_ids[player] = auto_pick_team(self.team_ids[player], blocked_ids=self.blocked_ids[player])
             self.teams[player] = [build_combatant(cid) for cid in self.team_ids[player]]
         self.phase = "BATTLE"
         self.logs.append(

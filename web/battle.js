@@ -20,11 +20,37 @@
   const artUrl = (id) => `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`;
 
   const S = {
-    token: localStorage.getItem(TOKEN_KEY) || "", user: null, rules: null, rosterMap: new Map(), ws: null, started: false,
+    token: localStorage.getItem(TOKEN_KEY) || "", user: null, rules: null, rosterMap: new Map(), cooldowns: {}, ws: null, started: false,
     role: 1, roomId: null, opponent: null, game: null, live: null,
     team: [], locked: false, filter: "", search: "", sort: "id", limit: PAGE_STEP, avatar: 25, mode: "login",
     inviteId: null, inviteTimer: null, offlineTarget: null, arena: null, chosen: null, queue: Promise.resolve(),
   };
+
+  function setCooldowns(raw) {
+    const next = {};
+    const now = Date.now();
+    for (const [k, v] of Object.entries(raw || {})) {
+      const pid = Number(k);
+      const sec = Number(v?.remaining_seconds || 0);
+      if (pid > 0 && sec > 0) next[pid] = now + sec * 1000;
+    }
+    S.cooldowns = next;
+  }
+  function cooldownLeft(pid) {
+    const exp = S.cooldowns[pid];
+    if (!exp) return 0;
+    const left = Math.ceil((exp - Date.now()) / 1000);
+    if (left <= 0) { delete S.cooldowns[pid]; return 0; }
+    return left;
+  }
+  function formatCooldown(sec) {
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    if (h > 0) return `${h}h ${String(m).padStart(2, "0")}m`;
+    if (m > 0) return `${m}m ${String(sec % 60).padStart(2, "0")}s`;
+    return `${sec}s`;
+  }
+  const sfx = (fn, ...args) => { if (window.BattleAudio?.[fn]) window.BattleAudio[fn](...args); };
 
   /* ================= retratos Pokémon ================= */
   function portrait(c, useArt = false) {
@@ -164,8 +190,25 @@
     $("#meName").textContent = S.user.display_name;
     $("#meTier").textContent = trainerTier(S.user.rating);
     $("#meStats").textContent = `${S.user.rating} pts · ${S.user.wins} vitórias · ${S.user.losses} derrotas`;
+    renderCooldownBanner();
     show("duelLobby");
     refreshBoards();
+  }
+  function renderCooldownBanner() {
+    const el = $("#pokemonCenterBanner");
+    if (!el) return;
+    const ids = Object.keys(S.cooldowns).map(Number).filter((id) => cooldownLeft(id) > 0);
+    if (!ids.length) { el.hidden = true; el.innerHTML = ""; return; }
+    el.hidden = false;
+    el.innerHTML = `
+      <div class="ko-banner-head">
+        <b>Centro Pokémon · ${ids.length} em recuperação (24h)</b>
+        <small>Pokémon derrotados em batalha retornam após 24 horas</small>
+      </div>
+      <div class="ko-pills">${ids.map((id) => {
+        const c = creature(id);
+        return `<span class="ko-pill"><img src="${spriteUrl(id)}" alt="" onerror="this.style.display='none'"/><span>#${id} ${esc(c?.name || id)}</span><small>${formatCooldown(cooldownLeft(id))}</small></span>`;
+      }).join("")}</div>`;
   }
   async function refreshBoards() {
     try {
@@ -206,6 +249,7 @@
         <li><b>Técnica</b>: gasta <b>${r.tech_cost} de Foco</b>, golpe especial do tipo com alto dano e efeito tático (Queimar, Drenar Foco, Regenerar, Quebrar Guarda ou Ímpeto prioritário).</li>
         <li><b>Guarda</b>: amortece ataques e rende <b>+2 de Foco</b>. Não pode ser usada 2 rodadas seguidas.</li>
         <li><b>Trocar</b>: envia outro Pokémon do trio antes dos golpes, aproveitando vantagens de tipo.</li>
+        <li><b>Centro Pokémon (24h)</b>: qualquer Pokémon seu que for derrotado (0 HP) em duelo fica indisponível por <b>24 horas</b> até se recuperar.</li>
       </ul>
       <p>O mais rápido ataca primeiro. Vence quem derrotar os ${r.team_size} Pokémon do adversário.</p>
       <ul class="wheel">${wheel}</ul>`;
@@ -250,11 +294,13 @@
 
     $("#rosterGrid").innerHTML = visible.map((c) => {
       const picked = S.team.includes(c.id);
-      const blocked = S.locked || (!picked && (S.team.length >= r.team_size || c.cost > left));
-      return `<button class="pick e-${c.element}" data-pick="${c.id}" aria-pressed="${picked}" ${blocked ? "disabled" : ""}>
+      const koSec = cooldownLeft(c.id);
+      const blocked = S.locked || (!picked && (koSec > 0 || S.team.length >= r.team_size || c.cost > left));
+      return `<button class="pick e-${c.element}${koSec > 0 ? " ko" : ""}" data-pick="${c.id}" aria-pressed="${picked}" ${blocked ? "disabled" : ""}>
         ${portrait(c)}<b>${elIcon(c.element)}#${c.id} ${esc(c.name)}</b><span class="cost" title="Custo em Stamina">${c.cost} SP</span>
         <span class="meta">${esc((c.types_pt || [elName(c.element)]).join("/"))} · HP ${c.hp} · Atq ${c.atk} · Def ${c.def} · Vel ${c.spd}</span>
-        <span class="tech">${esc(c.tech.name)}: ${esc(c.tech.effect_text)}</span></button>`;
+        <span class="tech">${esc(c.tech.name)}: ${esc(c.tech.effect_text)}</span>
+        ${koSec > 0 ? `<span class="ko-badge" title="Derrotado recentemente">Centro Pokémon · ${formatCooldown(koSec)}</span>` : ""}</button>`;
     }).join("") || `<p style="grid-column:1/-1;color:var(--fg-soft)">Nenhum Pokémon encontrado para este filtro.</p>`;
 
     const btn = $("#btnLockTeam");
@@ -264,6 +310,8 @@
   }
   function autoFillDraft() {
     if (S.locked) return;
+    sfx("unlock");
+    sfx("playSfx", "click");
     const r = S.rules;
     const picked = [...S.team];
     let spent = teamCost();
@@ -271,8 +319,8 @@
     while (picked.length < r.team_size) {
       const slotsLeft = r.team_size - picked.length;
       const maxAllow = r.team_budget - spent - 200 * (slotsLeft - 1);
-      let candidates = r.roster.filter((c) => !picked.includes(c.id) && c.cost <= maxAllow);
-      if (!candidates.length) candidates = [...r.roster].filter((c) => !picked.includes(c.id)).sort((a, b) => a.cost - b.cost);
+      let candidates = r.roster.filter((c) => !picked.includes(c.id) && cooldownLeft(c.id) === 0 && c.cost <= maxAllow);
+      if (!candidates.length) candidates = [...r.roster].filter((c) => !picked.includes(c.id) && cooldownLeft(c.id) === 0).sort((a, b) => a.cost - b.cost);
       if (!candidates.length) break;
       const diverse = candidates.filter((c) => !usedEls.has(c.element) && c.cost >= 320 && c.cost <= 560);
       const pool = diverse.length ? diverse : candidates;
@@ -286,7 +334,9 @@
     send("draft_update", { room_id: S.roomId, team_ids: S.team, locked: false });
   }
   function togglePick(id) {
-    if (S.locked) return;
+    if (S.locked || (!S.team.includes(id) && cooldownLeft(id) > 0)) return;
+    sfx("unlock");
+    sfx("playSfx", "click");
     S.team = S.team.includes(id) ? S.team.filter((x) => x !== id) : [...S.team, id];
     renderDraft();
     send("draft_update", { room_id: S.roomId, team_ids: S.team, locked: false });
@@ -447,23 +497,45 @@
   }
   function decorateEvent(ev, live) {
     const side = sideOf(ev.p), targetSide = sideOf(3 - ev.p);
+    const actor = activeOf(live, ev.p);
     if (ev.t === "attack") {
-      if (ev.kind === "tecnica") announce(ev.name, elName(ev.element));
+      if (ev.kind === "tecnica") {
+        announce(ev.name, elName(ev.element));
+        sfx("playSfx", "tech");
+      }
       const cls = ev.mult > 1 ? "strong" : ev.mult < 1 ? "weak" : "";
       setTimeout(() => {
+        sfx("playSfx", ev.mult > 1 ? "superHit" : ev.mult < 1 ? "weakHit" : "hit");
         floatText(targetSide, `-${ev.dmg}`, cls);
         if (ev.broke_guard) floatText(targetSide, "Guarda atravessada", "info");
         else if (ev.guarded) floatText(targetSide, "Amortecido", "info");
-        else if (ev.mult > 1) floatText(targetSide, "Vantagem!", "info");
+        else if (ev.mult > 1) floatText(targetSide, "Super eficaz!", "info");
         if (targetSide === "me") buzz(ev.kind === "tecnica" ? [30, 40, 60] : 25);
         if (ev.kind === "tecnica" || ev.mult > 1) { const st = $("#stage"); st.classList.remove("shake"); void st.offsetWidth; st.classList.add("shake"); }
         updatePlate(targetSide, live);
       }, ev.kind === "tecnica" ? 720 : 330);
-    } else if (ev.t === "heal") floatText(side, `+${ev.heal}`, "heal");
-    else if (ev.t === "burn") floatText(side, `-${ev.dmg}`, "weak");
-    else if (ev.t === "drain") floatText(side, "Foco drenado", "info");
-    else if (ev.t === "status") floatText(side, "Em chamas", "info");
-    else if (ev.t === "guard") floatText(side, "Guarda", "info");
+    } else if (ev.t === "heal") {
+      sfx("playSfx", "heal");
+      floatText(side, `+${ev.heal}`, "heal");
+    } else if (ev.t === "burn") {
+      sfx("playSfx", "burn");
+      floatText(side, `-${ev.dmg}`, "weak");
+    } else if (ev.t === "drain") {
+      sfx("playSfx", "drain");
+      floatText(side, "Foco drenado", "info");
+    } else if (ev.t === "status") {
+      sfx("playSfx", "burn");
+      floatText(side, "Em chamas", "info");
+    } else if (ev.t === "guard") {
+      sfx("playSfx", "guard");
+      floatText(side, "Guarda", "info");
+    } else if (ev.t === "switch" || ev.t === "enter") {
+      sfx("playSfx", "sendOut");
+      if (actor) setTimeout(() => sfx("playCry", actor.id, actor.name, false), 140);
+    } else if (ev.t === "faint") {
+      if (actor) sfx("playCry", actor.id, actor.name, true);
+      setTimeout(() => sfx("playSfx", "faint"), 180);
+    }
   }
   async function playRound(msg) {
     runTurnBar(0);
@@ -489,6 +561,7 @@
   }
 
   function leaveRoom() {
+    sfx("stopBgm");
     S.roomId = null; S.game = null; S.chosen = null; S.queue = Promise.resolve();
     if (S.arena) { S.arena.dispose(); S.arena = null; }
     for (const id of ["duelResult", "duelConfirm"]) if ($(`#${id}`).open) $(`#${id}`).close();
@@ -498,7 +571,15 @@
 
   /* ================= mensagens do servidor ================= */
   const HANDLERS = {
-    auth_success(msg) { S.user = { ...S.user, ...msg.user }; if (!S.roomId) enterLobby(); },
+    auth_success(msg) {
+      S.user = { ...S.user, ...msg.user };
+      if (msg.cooldowns) setCooldowns(msg.cooldowns);
+      if (!S.roomId) enterLobby();
+    },
+    cooldowns_update(msg) {
+      setCooldowns(msg.cooldowns || {});
+      renderCooldownBanner();
+    },
     auth_error(msg) { toast("Sessão encerrada", msg.message, "error"); logout(); },
     error(msg) { toast("Não foi possível", msg.message, "error"); },
     lobby_update(msg) { if (S.user) renderTrainers(msg.trainers); },
@@ -522,6 +603,7 @@
       $("#duelOffline").showModal();
     },
     battle_matched(msg) {
+      if (msg.cooldowns) setCooldowns(msg.cooldowns);
       Object.assign(S, { roomId: msg.room_id, role: msg.role, opponent: msg.opponent, game: msg.state, team: [], locked: false, filter: "", search: "", sort: "id", limit: PAGE_STEP });
       if ($("#draftSearch")) $("#draftSearch").value = "";
       if ($("#draftSort")) $("#draftSort").value = "id";
@@ -544,11 +626,18 @@
         setHint("Os Pokémon entram na arena!");
         createArena();
         show("duelArena");
+        updateAudioButtons();
+        sfx("startBgm");
+        sfx("playSfx", "sendOut");
+        const meFirst = activeOf(S.game, S.role);
+        const foeFirst = activeOf(S.game, 3 - S.role);
+        sfx("playCry", meFirst.id, meFirst.name, false);
+        setTimeout(() => sfx("playCry", foeFirst.id, foeFirst.name, false), 650);
         narrate(S.game.logs[S.game.logs.length - 1]);
         announce("Duelo!", `${S.game.p1_name} contra ${S.game.p2_name}`);
         await Promise.race([Promise.all([
-          S.arena.setCreature("me", activeOf(S.game, S.role), { animate: true }),
-          S.arena.setCreature("foe", activeOf(S.game, 3 - S.role), { animate: true }),
+          S.arena.setCreature("me", meFirst, { animate: true }),
+          S.arena.setCreature("foe", foeFirst, { animate: true }),
         ]), sleep(1200)]);
       });
     },
@@ -569,9 +658,11 @@
     battle_ended(msg) {
       enqueue(async () => {
         if (!S.roomId) return;
+        sfx("stopBgm");
         runTurnBar(0); renderControls(false);
         const won = msg.winner === S.role;
         S.game = msg.state;
+        sfx("playSfx", won ? "victory" : "defeat");
         if (S.arena && msg.winner) await Promise.race([S.arena.celebrate(sideOf(msg.winner)), sleep(900)]);
         const dlg = $("#duelResult");
         dlg.classList.toggle("win", won);
@@ -607,14 +698,16 @@
       renderAvatarPicker();
     });
     $("#btnLogout").addEventListener("click", logout);
-    $("#btnBot").addEventListener("click", () => send("start_bot_battle"));
+    $("#btnBot").addEventListener("click", () => { sfx("unlock"); send("start_bot_battle"); });
     $("#challengeForm").addEventListener("submit", () => {
+      sfx("unlock");
       const name = $("#challengeUser").value.trim();
       if (!name) { $("#challengeUser").focus(); return; }
       send("challenge", { target_username: name });
       $("#challengeUser").value = "";
     });
     $("#trainerList").addEventListener("click", (e) => {
+      sfx("unlock");
       const b = e.target.closest("[data-challenge]");
       if (b) send("challenge", { target_id: Number(b.dataset.challenge) });
     });
@@ -657,8 +750,22 @@
       send("draft_update", { room_id: S.roomId, team_ids: S.team, locked: true });
     });
 
-    $("#actions").addEventListener("click", (e) => { const b = e.target.closest(".act"); if (b && !b.disabled) choose({ kind: b.dataset.kind }); });
-    $("#bench").addEventListener("click", (e) => { const b = e.target.closest("[data-switch]"); if (b && !b.disabled) choose({ kind: "trocar", idx: Number(b.dataset.switch) }); });
+    $("#actions").addEventListener("click", (e) => { sfx("unlock"); const b = e.target.closest(".act"); if (b && !b.disabled) { sfx("playSfx", "click"); choose({ kind: b.dataset.kind }); } });
+    $("#bench").addEventListener("click", (e) => { sfx("unlock"); const b = e.target.closest("[data-switch]"); if (b && !b.disabled) { sfx("playSfx", "click"); choose({ kind: "trocar", idx: Number(b.dataset.switch) }); } });
+    if ($("#btnAudioToggle")) $("#btnAudioToggle").addEventListener("click", () => {
+      sfx("unlock");
+      const next = !(window.BattleAudio?.isSfxEnabled?.() ?? true);
+      sfx("setSfx", next);
+      if (next && !$("#duelArena").hidden && window.BattleAudio?.isBgmEnabled?.()) sfx("startBgm");
+      updateAudioButtons();
+    });
+    if ($("#btnMusicToggle")) $("#btnMusicToggle").addEventListener("click", () => {
+      sfx("unlock");
+      const next = !(window.BattleAudio?.isBgmEnabled?.() ?? true);
+      sfx("setBgm", next);
+      if (next && !$("#duelArena").hidden && window.BattleAudio?.isSfxEnabled?.()) sfx("startBgm");
+      updateAudioButtons();
+    });
     document.addEventListener("keydown", (e) => {
       if ($("#duelArena").hidden || !battleTabActive() || e.target.closest("input, textarea, select, dialog")) return;
       const btn = $("#actions").querySelectorAll(".act")[Number(e.key) - 1];
@@ -669,9 +776,26 @@
     $("#btnConfirmYes").addEventListener("click", () => { $("#duelConfirm").close(); send("surrender", { room_id: S.roomId }); });
     $("#btnBackToLobby").addEventListener("click", async () => {
       leaveRoom();
-      try { const me = await api("/me"); enterLobby({ ...S.user, ...me.user }); } catch (_) { logout(); }
+      try {
+        const me = await api("/me");
+        if (me.cooldowns) setCooldowns(me.cooldowns);
+        enterLobby({ ...S.user, ...me.user });
+      } catch (_) { logout(); }
     });
     $("#duelResult").addEventListener("cancel", (e) => e.preventDefault());
+  }
+  function updateAudioButtons() {
+    const sfxOn = window.BattleAudio?.isSfxEnabled?.() ?? true;
+    const bgmOn = window.BattleAudio?.isBgmEnabled?.() ?? true;
+    const bSfx = $("#btnAudioToggle"), bBgm = $("#btnMusicToggle");
+    if (bSfx) {
+      bSfx.classList.toggle("off", !sfxOn);
+      $("span", bSfx).textContent = sfxOn ? "Som" : "Mudo";
+    }
+    if (bBgm) {
+      bBgm.classList.toggle("off", !sfxOn || !bgmOn);
+      $("span", bBgm).textContent = (sfxOn && bgmOn) ? "Música" : "Música off";
+    }
   }
 
   async function boot() {
@@ -693,6 +817,7 @@
     if (!S.token) { show("duelAuth"); return; }
     try {
       const me = await api("/me");
+      if (me.cooldowns) setCooldowns(me.cooldowns);
       enterLobby(me.user);
       connect();
     } catch (_) {

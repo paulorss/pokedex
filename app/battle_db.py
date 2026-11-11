@@ -64,8 +64,17 @@ def init_db():
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
         );
 
+        CREATE TABLE IF NOT EXISTS pokemon_cooldowns (
+            user_id INTEGER NOT NULL,
+            pokemon_id INTEGER NOT NULL,
+            available_at TEXT NOT NULL,
+            PRIMARY KEY (user_id, pokemon_id),
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
         CREATE INDEX IF NOT EXISTS idx_users_rating ON users(rating DESC);
         CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+        CREATE INDEX IF NOT EXISTS idx_cooldowns_user ON pokemon_cooldowns(user_id);
         """)
         conn.commit()
 
@@ -343,6 +352,53 @@ def get_recent_battles(user_id: int | None = None, limit: int = 15) -> list[dict
                 pass
             out.append(d)
         return out
+
+
+def mark_pokemon_ko(user_id: int | None, pokemon_ids: list[int], hours: int = 24) -> None:
+    """Registra Pokémon derrotados em duelo, deixando-os indisponíveis por 24 horas."""
+    if not user_id or user_id <= 0 or not pokemon_ids:
+        return
+    available_at = (datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat()
+    unique_ids = sorted({int(pid) for pid in pokemon_ids if int(pid) > 0})
+    with get_connection() as conn:
+        for pid in unique_ids:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO pokemon_cooldowns (user_id, pokemon_id, available_at)
+                VALUES (?, ?, ?)
+                """,
+                (user_id, pid, available_at),
+            )
+        conn.commit()
+
+
+def get_user_cooldowns(user_id: int | None) -> dict[int, dict[str, Any]]:
+    """Retorna os Pokémon atualmente em recuperação (24h) do treinador."""
+    if not user_id or user_id <= 0:
+        return {}
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+    with get_connection() as conn:
+        conn.execute("DELETE FROM pokemon_cooldowns WHERE user_id = ? AND available_at <= ?", (user_id, now_iso))
+        conn.commit()
+        rows = conn.execute(
+            "SELECT pokemon_id, available_at FROM pokemon_cooldowns WHERE user_id = ?",
+            (user_id,),
+        ).fetchall()
+
+    result: dict[int, dict[str, Any]] = {}
+    for r in rows:
+        try:
+            avail_dt = datetime.fromisoformat(r["available_at"])
+            remaining = max(1, int((avail_dt - now).total_seconds()))
+        except Exception:
+            remaining = 24 * 3600
+        result[int(r["pokemon_id"])] = {
+            "pokemon_id": int(r["pokemon_id"]),
+            "available_at": r["available_at"],
+            "remaining_seconds": remaining,
+        }
+    return result
 
 
 init_db()

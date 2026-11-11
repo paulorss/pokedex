@@ -23,7 +23,9 @@ from app.battle_db import (
     get_user_by_id,
     get_user_by_token,
     get_user_by_username,
+    get_user_cooldowns,
     login_user,
+    mark_pokemon_ko,
     record_battle_result,
     register_user,
 )
@@ -85,13 +87,28 @@ def api_login(req: LoginRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+def _cooldowns_payload(user_id: int | None) -> dict[str, dict[str, Any]]:
+    if not user_id or user_id <= 0:
+        return {}
+    return {str(pid): info for pid, info in get_user_cooldowns(user_id).items()}
+
+
 @router.get("/me")
 def api_me(authorization: str | None = Header(None)):
     token = authorization[7:].strip() if authorization and authorization.startswith("Bearer ") else ""
     user = get_user_by_token(token)
     if not user:
         raise HTTPException(status_code=401, detail="Sessão inválida ou expirada.")
-    return {"ok": True, "user": user}
+    return {"ok": True, "user": user, "cooldowns": _cooldowns_payload(user["id"])}
+
+
+@router.get("/cooldowns")
+def api_cooldowns(authorization: str | None = Header(None)):
+    token = authorization[7:].strip() if authorization and authorization.startswith("Bearer ") else ""
+    user = get_user_by_token(token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Sessão inválida ou expirada.")
+    return {"ok": True, "cooldowns": _cooldowns_payload(user["id"])}
 
 
 @router.get("/rules")
@@ -254,11 +271,18 @@ async def finish_battle(room_id: str) -> None:
         except Exception:
             log.exception("falha ao gravar o resultado da sala %s", room_id)
 
+    for player_no, uid in ((1, state.p1_id), (2, None if state.is_bot else state.p2_id)):
+        if uid:
+            ko_ids = [c["id"] for c in state.teams[player_no] if c["hp"] <= 0 or c.get("fainted")]
+            if ko_ids:
+                mark_pokemon_ko(uid, ko_ids, hours=24)
+
     for uid in (state.p1_id, None if state.is_bot else state.p2_id):
         if uid in online_users:
             online_users[uid]["in_battle"] = False
             online_users[uid]["room_id"] = None
             online_users[uid]["user"] = get_user_by_id(uid) or online_users[uid]["user"]
+            await send_to_user(uid, {"type": "cooldowns_update", "cooldowns": _cooldowns_payload(uid)})
 
     await broadcast_room(room_id, {
         "type": "battle_ended",
@@ -293,14 +317,17 @@ def _find_target(data: dict[str, Any]) -> dict[str, Any] | None:
 
 
 async def _start_bot_room(user: dict[str, Any], ws: WebSocket, opponent: dict[str, Any], prefix: str) -> None:
+    p1_cd = get_user_cooldowns(user["id"])
     state = BattleState(room_id=f"{prefix}_{uuid.uuid4().hex[:10]}", p1_id=user["id"],
                         p1_name=user["display_name"], p2_id=opponent.get("id"),
-                        p2_name=opponent["display_name"], is_bot=True)
+                        p2_name=opponent["display_name"], is_bot=True,
+                        p1_blocked=set(p1_cd.keys()))
     state.team_ids[2] = auto_pick_team([])
     state.locked[2] = True
     _open_room(state, ws, None)
     await _send(ws, {"type": "battle_matched", "room_id": state.room_id, "role": 1,
                      "opponent": {**_public_user(opponent), "is_bot": True},
+                     "cooldowns": {str(k): v for k, v in p1_cd.items()},
                      "state": state.to_client_state()})
     await broadcast_lobby()
 
@@ -350,12 +377,17 @@ async def handle_ws_message(user_id: int, user: dict[str, Any], ws: WebSocket, d
         if p1["id"] not in online_users or online_users[p1["id"]].get("in_battle"):
             await _send(ws, {"type": "error", "message": f"{p1['display_name']} não está mais disponível."})
             return
+        p1_cd = get_user_cooldowns(p1["id"])
+        p2_cd = get_user_cooldowns(p2["id"])
         state = BattleState(room_id=f"sala_{uuid.uuid4().hex[:10]}", p1_id=p1["id"], p1_name=p1["display_name"],
-                            p2_id=p2["id"], p2_name=p2["display_name"])
+                            p2_id=p2["id"], p2_name=p2["display_name"],
+                            p1_blocked=set(p1_cd.keys()), p2_blocked=set(p2_cd.keys()))
         _open_room(state, online_users[p1["id"]]["ws"], ws)
-        for role, me, foe in ((1, p1, p2), (2, p2, p1)):
+        for role, me, foe, cd in ((1, p1, p2, p1_cd), (2, p2, p1, p2_cd)):
             await send_to_user(me["id"], {"type": "battle_matched", "room_id": state.room_id, "role": role,
-                                          "opponent": _public_user(foe), "state": state.to_client_state()})
+                                          "opponent": _public_user(foe),
+                                          "cooldowns": {str(k): v for k, v in cd.items()},
+                                          "state": state.to_client_state()})
         await broadcast_lobby()
 
     elif action == "decline_challenge":
@@ -372,11 +404,11 @@ async def handle_ws_message(user_id: int, user: dict[str, Any], ws: WebSocket, d
             team_ids = [int(x) for x in (data.get("team_ids") or [])]
         except (TypeError, ValueError):
             return
-        error = validate_team(team_ids)
+        player = state.player_of(user_id)
+        error = validate_team(team_ids, blocked_ids=state.blocked_ids[player])
         if error:
             await _send(ws, {"type": "error", "message": error})
             return
-        player = state.player_of(user_id)
         state.team_ids[player] = team_ids
         state.locked[player] = bool(data.get("locked")) and len(team_ids) > 0
         await broadcast_room(state.room_id, {
@@ -427,7 +459,7 @@ async def websocket_battle_endpoint(websocket: WebSocket, token: str = ""):
     if previous:  # mesma conta aberta em outra aba: a conexão antiga é encerrada
         await _send(previous["ws"], {"type": "auth_error", "message": "Sua conta foi aberta em outro lugar."})
     online_users[user_id] = {"ws": websocket, "user": user, "in_battle": False, "room_id": None}
-    await _send(websocket, {"type": "auth_success", "user": user})
+    await _send(websocket, {"type": "auth_success", "user": user, "cooldowns": _cooldowns_payload(user_id)})
     await broadcast_lobby()
 
     try:

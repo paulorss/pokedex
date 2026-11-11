@@ -181,6 +181,7 @@
                 <ul id="historyList" class="rows"></ul>
               </div>
             </div>
+            <div id="pokemonCenterBanner" class="duel-panel ko-banner" hidden></div>
             <details class="duel-panel rules">
               <summary>Como jogar &amp; Vantagens de Tipo</summary>
               <div id="rulesBody"></div>
@@ -242,7 +243,11 @@
               <div class="bench" id="bench" aria-label="Trocar de Pokémon"></div>
               <div class="arena-foot">
                 <ol class="ticker" id="ticker" aria-label="Narração"></ol>
-                <button class="btn ghost small" id="btnSurrender"><svg class="ic" aria-hidden="true"><use href="#i-flag"/></svg>Desistir</button>
+                <div class="arena-tools">
+                  <button class="btn ghost small" id="btnAudioToggle" type="button" title="Ativar/silenciar sons e gritos"><svg class="ic" aria-hidden="true"><use href="#i-speaker"/></svg><span>Som</span></button>
+                  <button class="btn ghost small" id="btnMusicToggle" type="button" title="Ativar/pausar música de batalha"><span>Música</span></button>
+                  <button class="btn ghost small" id="btnSurrender" type="button"><svg class="ic" aria-hidden="true"><use href="#i-flag"/></svg>Desistir</button>
+                </div>
               </div>
             </div>
           </div>
@@ -352,6 +357,7 @@
   <script src="app.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" defer></script>
   <script src="battle3d.js" defer></script>
+  <script src="battle_audio.js" defer></script>
   <script src="battle.js" defer></script>
 </body>
 </html>
