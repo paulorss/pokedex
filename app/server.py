@@ -128,31 +128,61 @@ def health():
     }
 
 
+DATASET_DIR = DATA / "dataset" / "dataset"
+
+
+def _cdn_gallery(pid: int) -> list[dict]:
+    base = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon"
+    return [
+        {"url": f"{base}/other/official-artwork/{pid}.png", "name": "Arte Oficial", "is_3d": False, "is_shiny": False},
+        {"url": f"{base}/other/official-artwork/shiny/{pid}.png", "name": "Arte Oficial Shiny", "is_3d": False, "is_shiny": True},
+        {"url": f"{base}/other/home/{pid}.png", "name": "Modelo 3D HOME", "is_3d": True, "is_shiny": False},
+        {"url": f"{base}/other/home/shiny/{pid}.png", "name": "Modelo 3D HOME Shiny", "is_3d": True, "is_shiny": True},
+    ]
+
+
 def format_pokemon(p: dict) -> dict:
-    """Garante que sprites e artworks tenham URLs funcionais mesmo em ambientes Docker."""
+    """Garante que sprites, artworks e galeria tenham URLs funcionais mesmo em ambientes Docker."""
     p_copy = dict(p)
     pid = p.get("id", 1)
-    img_rel = p.get("image", "")
-    sprite_rel = p.get("sprite", "")
+    img_rel = (p.get("image") or "").lstrip("/")
+    sprite_rel = (p.get("sprite") or "").lstrip("/")
 
     # Se a imagem local não existir no servidor (ex: Dokploy/Docker limpo), usa CDN oficial
-    if not (WEB / img_rel).exists() or not img_rel:
+    if not img_rel or not (WEB / img_rel).exists():
         p_copy["image"] = f"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/{pid}.png"
-    if not (WEB / sprite_rel).exists() or not sprite_rel:
+    if not sprite_rel or not (WEB / sprite_rel).exists():
         p_copy["sprite"] = f"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/{pid}.png"
+
+    # Filtra itens da galeria local (/dataset/...) que não existem no container e usa variações oficiais da CDN
+    raw_gallery = p.get("gallery") or []
+    valid_gallery = []
+    for item in raw_gallery:
+        url = item.get("url", "")
+        if url.startswith("/dataset/"):
+            rel = url[len("/dataset/"):]
+            if DATASET_DIR.exists() and (DATASET_DIR / rel).exists():
+                valid_gallery.append(item)
+        elif url.startswith("http") or (url and (WEB / url.lstrip("/")).exists()):
+            valid_gallery.append(item)
+    p_copy["gallery"] = valid_gallery if valid_gallery else _cdn_gallery(pid)
     return p_copy
 
 
 @app.get("/api/pokemon", dependencies=[Depends(check_auth)])
 def list_pokemon():
-    return [{
-        "id": p["id"],
-        "name": p["name"],
-        "types": p["types"],
-        "types_pt": p["types_pt"],
-        "sprite": format_pokemon(p)["sprite"],
-        "image": format_pokemon(p)["image"],
-    } for p in POKEMON]
+    out = []
+    for p in POKEMON:
+        fp = format_pokemon(p)
+        out.append({
+            "id": fp["id"],
+            "name": fp["name"],
+            "types": fp["types"],
+            "types_pt": fp["types_pt"],
+            "sprite": fp["sprite"],
+            "image": fp["image"],
+        })
+    return out
 
 
 @app.get("/api/pokemon/{pid}", dependencies=[Depends(check_auth)])

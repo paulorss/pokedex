@@ -122,30 +122,31 @@
         <div id="grid" class="grid"></div>
       </section>
 
-      <!-- ===== Duelo dos Encantados (jogo original) ===== -->
+      <!-- ===== Arena Pokémon Online ===== -->
       <section id="view-battle" class="view">
         <div class="duel" id="duel">
 
           <!-- 1. Entrar / criar conta -->
           <div id="duelAuth" class="duel-panel duel-auth" hidden>
-            <h2>Duelo dos Encantados</h2>
-            <p class="duel-lead">Monte um trio de criaturas dos cinco elementos e vença rodada a rodada: Golpe, Técnica, Guarda ou Troca.</p>
+            <div class="duel-hero-badge">PvP Online &amp; IA · 1.025 Pokémon</div>
+            <h2>Arena Pokémon Online</h2>
+            <p class="duel-lead">Monte seu trio da Pokédex respeitando o limite de Stamina e batalhe em tempo real: Golpe, Técnica, Guarda ou Troca.</p>
             <div class="seg" role="tablist">
               <button class="seg-btn active" id="tabLogin" role="tab" aria-selected="true">Entrar</button>
               <button class="seg-btn" id="tabRegister" role="tab" aria-selected="false">Criar conta</button>
             </div>
             <form id="duelAuthForm" onsubmit="return false;">
               <div class="form-group"><label for="duelUser">Usuário</label>
-                <input id="duelUser" class="form-input" autocomplete="username" minlength="3" maxlength="24" required /></div>
+                <input id="duelUser" class="form-input" autocomplete="username" minlength="3" maxlength="24" placeholder="Ex.: ash_ketchum" required /></div>
               <div class="form-group"><label for="duelPass">Senha</label>
-                <input id="duelPass" class="form-input" type="password" autocomplete="current-password" minlength="4" required /></div>
+                <input id="duelPass" class="form-input" type="password" autocomplete="current-password" minlength="4" placeholder="Mínimo 4 caracteres" required /></div>
               <div id="registerOnly" hidden>
                 <div class="form-group"><label for="duelDisplay">Nome de treinador (opcional)</label>
-                  <input id="duelDisplay" class="form-input" maxlength="24" /></div>
-                <div class="form-group"><span class="label" id="avatarLabel">Seu Encantado de perfil</span>
+                  <input id="duelDisplay" class="form-input" maxlength="24" placeholder="Como aparece para outros jogadores" /></div>
+                <div class="form-group"><span class="label" id="avatarLabel">Seu Pokémon parceiro de perfil</span>
                   <div id="avatarPicker" class="avatar-picker" role="radiogroup" aria-labelledby="avatarLabel"></div></div>
               </div>
-              <button id="btnDuelAuth" class="btn shoot" style="width:100%">Entrar</button>
+              <button id="btnDuelAuth" class="btn shoot" style="width:100%">Entrar na Arena</button>
               <p id="duelAuthMsg" class="form-msg" role="alert"></p>
             </form>
           </div>
@@ -154,22 +155,25 @@
           <div id="duelLobby" hidden>
             <div class="duel-panel lobby-head">
               <span id="meAvatar" class="avatar lg"></span>
-              <div class="me-info"><b id="meName"></b><span id="meStats"></span></div>
+              <div class="me-info">
+                <div class="me-name-row"><b id="meName"></b><span class="me-pill" id="meTier">Treinador</span></div>
+                <span id="meStats"></span>
+              </div>
               <button id="btnBot" class="btn shoot"><svg class="ic" aria-hidden="true"><use href="#i-duel"/></svg>Treinar contra a IA</button>
               <button id="btnLogout" class="btn ghost" aria-label="Sair da conta" title="Sair da conta"><svg class="ic" aria-hidden="true"><use href="#i-logout"/></svg></button>
             </div>
             <div class="lobby-grid">
               <div class="duel-panel">
-                <h3>Treinadores</h3>
+                <div class="panel-title-row"><h3>Treinadores</h3><span class="online-badge" id="onlineBadge">0 online</span></div>
                 <form id="challengeForm" class="inline-form" onsubmit="return false;">
                   <label for="challengeUser" class="sr-only">Usuário do treinador</label>
-                  <input id="challengeUser" class="form-input" placeholder="Desafiar por nome de usuário" maxlength="24" />
+                  <input id="challengeUser" class="form-input" placeholder="Convidar por usuário (ex.: Pika)" maxlength="24" />
                   <button class="btn" id="btnChallenge">Desafiar</button>
                 </form>
                 <ul id="trainerList" class="rows"></ul>
               </div>
               <div class="duel-panel">
-                <h3>Ranking</h3>
+                <h3>Ranking Global</h3>
                 <ol id="rankList" class="rows rank"></ol>
               </div>
               <div class="duel-panel">
@@ -178,7 +182,7 @@
               </div>
             </div>
             <details class="duel-panel rules">
-              <summary>Como jogar</summary>
+              <summary>Como jogar &amp; Vantagens de Tipo</summary>
               <div id="rulesBody"></div>
             </details>
           </div>
@@ -188,15 +192,33 @@
             <div class="duel-panel draft-head">
               <div class="timer" id="draftTimer" role="timer" aria-label="Tempo de escolha"><b>60</b></div>
               <div class="draft-status">
-                <b>Monte seu trio</b>
+                <b>Monte seu trio Pokédex</b>
                 <span id="draftOpp"></span>
                 <div class="budget" aria-live="polite"><div class="budget-bar"><i id="budgetFill"></i></div><span id="budgetText"></span></div>
               </div>
-              <button id="btnLockTeam" class="btn shoot" disabled><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span>Confirmar trio</span></button>
+              <div class="draft-actions">
+                <button id="btnAutoPick" type="button" class="btn ghost small" title="Completar trio equilibrado automaticamente"><svg class="ic" aria-hidden="true"><use href="#i-spark"/></svg>Aleatório</button>
+                <button id="btnLockTeam" type="button" class="btn shoot" disabled><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span>Confirmar trio</span></button>
+              </div>
             </div>
             <div id="draftSlots" class="draft-slots"></div>
-            <div id="elementChips" class="chips" role="group" aria-label="Filtrar por elemento"></div>
+            <div class="draft-toolbar">
+              <input id="draftSearch" type="search" class="form-input" placeholder="Buscar entre 1.025 Pokémon por nome ou #número..." aria-label="Buscar Pokémon para o trio" />
+              <select id="draftSort" class="form-input" aria-label="Ordenar Pokémon">
+                <option value="id"># Pokédex</option>
+                <option value="cost-asc">Menor Stamina</option>
+                <option value="cost-desc">Maior Stamina</option>
+                <option value="spd-desc">Mais Rápidos</option>
+                <option value="atk-desc">Maior Ataque</option>
+                <option value="hp-desc">Maior HP</option>
+              </select>
+            </div>
+            <div id="elementChips" class="chips" role="group" aria-label="Filtrar por tipo Pokémon"></div>
+            <p id="draftMatchCount" class="draft-match-count"></p>
             <div id="rosterGrid" class="roster"></div>
+            <div id="rosterMoreWrap" class="roster-more" hidden>
+              <button id="btnLoadMoreRoster" type="button" class="btn ghost">Carregar mais Pokémon</button>
+            </div>
           </div>
 
           <!-- 4. Arena -->
@@ -217,7 +239,7 @@
                 <button class="act tech" data-kind="tecnica"><svg class="ic" aria-hidden="true"><use href="#i-spark"/></svg><b id="techName">Técnica</b><small id="techInfo">3 de Foco</small></button>
                 <button class="act" data-kind="guarda"><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg><b>Guarda</b><small>Amortece, +2 Foco</small></button>
               </div>
-              <div class="bench" id="bench" aria-label="Trocar de Encantado"></div>
+              <div class="bench" id="bench" aria-label="Trocar de Pokémon"></div>
               <div class="arena-foot">
                 <ol class="ticker" id="ticker" aria-label="Narração"></ol>
                 <button class="btn ghost small" id="btnSurrender"><svg class="ic" aria-hidden="true"><use href="#i-flag"/></svg>Desistir</button>

@@ -89,11 +89,12 @@ function renderDetail(p, confidence = null) {
       <div class="bar"><i style="--i:${i};width:${Math.min(100, (p.stats[k] / STAT_BAR_MAX) * 100)}%;background:${color}"></i></div></div>`).join("");
   const abilities = p.abilities.map((a) =>
     `<div class="abil"><b>${esc(a.name)}</b>${a.hidden ? " <small>(oculta)</small>" : ""}<br><small>${esc(a.description)}</small></div>`).join("");
-  const evo = p.evolution.length > 1 ? p.evolution.map((stage) => `
+  const evoStages = Array.isArray(p.evolution) ? p.evolution : [];
+  const evo = evoStages.length > 1 ? evoStages.map((stage) => `
       <div class="stage">${stage.map((id) => {
         const e = ALL.find((x) => x.id === id);
-        return `<button data-id="${id}" class="${id === p.id ? "cur" : ""}"><img src="${e?.sprite || POKE_SPRITE_URL(id)}" alt="" onerror="this.onerror=null;this.src='${POKE_SPRITE_URL(id)}'"><span>${esc(e?.name || id)}</span></button>`;
-      }).join("")}</div>`).join(`<span class="arrow">${icon("arrow")}</span>`) : "<small>Este Pokémon não possui evolução nesta geração.</small>";
+        return `<button data-id="${id}" class="${id === p.id ? "cur" : ""}"><img src="${e?.sprite || POKE_SPRITE_URL(id)}" alt="${esc(e?.name || id)}" onerror="this.onerror=null;this.src='${POKE_SPRITE_URL(id)}'"><span>${esc(e?.name || ("#" + id))}</span></button>`;
+      }).join("")}</div>`).join(`<span class="arrow">${icon("arrow")}</span>`) : "<small>Este Pokémon não possui evolução conhecida.</small>";
 
   return `<div class="dex t-${p.types[0]}">
     <div class="dex-head">
@@ -136,7 +137,7 @@ function renderDetail(p, confidence = null) {
     <div class="gallery-scroll">
       ${p.gallery.map((g) => `
         <button class="gallery-item" data-src="${esc(g.url)}" aria-label="${esc(g.name)}" title="${esc(g.name)}">
-          <img src="${esc(g.url)}" alt="" loading="lazy" />
+          <img src="${esc(g.url)}" alt="${esc(g.name)}" onerror="this.closest('.gallery-item')?.remove()" />
           ${g.is_3d ? '<span class="tag-3d">3D</span>' : ""}
           ${g.is_shiny ? '<span class="tag-shiny">Shiny</span>' : ""}
         </button>`).join("")}

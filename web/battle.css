@@ -1,21 +1,49 @@
-/* ===== Duelo dos Encantados ===== */
+/* ===== Arena Pokémon Online ===== */
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 .duel, .duel-dialog, .toasts {
-  --night: #0e1d1b;
-  --night-2: #16302c;
-  --night-3: #21443e;
-  --line: #3a6259;
+  --night: #0d1b19;
+  --night-2: #152d29;
+  --night-3: #1e3f39;
+  --line: #345c54;
   --fg: #eef7f2;
-  --fg-soft: #a9cbbf;      /* 8.5:1 sobre --night-2 */
+  --fg-soft: #a9cbbf;
   --ember: #ffb23e;
   --ember-ink: #2b1a00;
   --danger: #ff6b5e;
   --el: #a9cbbf;
-  --e-brasa: #ff7a3d; --e-mata: #58b368; --e-mare: #3a9bff; --e-pedra: #c9a66b; --e-vento: #a99bff;
+  --e-fire: #ff7a3d;     --e-water: #3a9bff;   --e-grass: #58b368;   --e-electric: #ffd23f;
+  --e-ice: #74d7ee;      --e-fighting: #e05a47;--e-poison: #b45cd9;  --e-ground: #d4a656;
+  --e-flying: #89a8ff;   --e-psychic: #ff65a3; --e-bug: #94c43f;     --e-rock: #c9a66b;
+  --e-ghost: #8d72e1;    --e-dragon: #6e68ff;  --e-steel: #9bb0c1;   --e-dark: #7c6b86;
+  --e-fairy: #f48fb1;    --e-normal: #a8b2bd;
 }
-.e-brasa { --el: var(--e-brasa); } .e-mata { --el: var(--e-mata); } .e-mare { --el: var(--e-mare); }
-.e-pedra { --el: var(--e-pedra); } .e-vento { --el: var(--e-vento); }
+.e-fire { --el: var(--e-fire); }       .e-water { --el: var(--e-water); }     .e-grass { --el: var(--e-grass); }
+.e-electric { --el: var(--e-electric); }.e-ice { --el: var(--e-ice); }        .e-fighting { --el: var(--e-fighting); }
+.e-poison { --el: var(--e-poison); }   .e-ground { --el: var(--e-ground); }   .e-flying { --el: var(--e-flying); }
+.e-psychic { --el: var(--e-psychic); } .e-bug { --el: var(--e-bug); }         .e-rock { --el: var(--e-rock); }
+.e-ghost { --el: var(--e-ghost); }     .e-dragon { --el: var(--e-dragon); }   .e-steel { --el: var(--e-steel); }
+.e-dark { --el: var(--e-dark); }       .e-fairy { --el: var(--e-fairy); }     .e-normal { --el: var(--e-normal); }
+
+.duel-hero-badge { display: inline-block; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+  padding: 3px 10px; border-radius: 999px; background: color-mix(in srgb, var(--ember) 18%, #0a1513); color: var(--ember); margin-bottom: 8px; border: 1px solid color-mix(in srgb, var(--ember) 45%, transparent); }
+.portrait { display: grid; place-items: center; width: 100%; height: 100%; }
+.avatar img, .avatar-picker img, .portrait img { width: 100%; height: 100%; object-fit: contain; display: block; image-rendering: auto; filter: drop-shadow(0 3px 6px #0007); }
+.panel-title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.panel-title-row h3 { margin: 0; }
+.online-badge { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 999px; background: #123c2c; color: #69f0ae; border: 1px solid #286d51; }
+.me-name-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.me-pill { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: #0a1513; color: var(--ember); border: 1px solid var(--line); }
+.draft-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.draft-toolbar { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.draft-toolbar input { flex: 1 1 220px; }
+.draft-toolbar select { flex: 0 0 170px; }
+.draft-match-count { margin: 0 0 8px; font-size: 12px; color: var(--fg-soft); }
+.roster-more { display: flex; justify-content: center; margin-top: 12px; }
+.type-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--el); flex: none; box-shadow: 0 0 6px var(--el); }
+.eff-badge { font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 999px; text-transform: uppercase; letter-spacing: .03em; }
+.eff-badge.super { background: #1e623f; color: #7dffb0; }
+.eff-badge.weak { background: #5e2924; color: #ffb5ad; }
 
 #view-battle.active { display: block; }
 .duel { color: var(--fg); background: var(--night); border-radius: var(--radius); padding: 12px; border: 3px solid #333; min-height: 420px; }
@@ -97,8 +125,8 @@
 .slot.filled { border-style: solid; border-color: var(--el); background: color-mix(in srgb, var(--el) 16%, var(--night-2)); color: var(--fg); cursor: pointer; }
 .slot .portrait { width: 56px; height: 56px; flex: none; }
 .slot b { display: block; font-size: 14px; }
-.chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
-.chip { min-height: 40px; padding: 0 14px; border-radius: 999px; border: 0; background: var(--night-2); color: var(--fg); font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: inset 0 0 0 1px var(--line); }
+.chips { display: flex; gap: 6px; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; margin-bottom: 8px; scrollbar-width: thin; }
+.chip { flex: none; min-height: 34px; font-size: 12px; padding: 0 12px; border-radius: 999px; border: 0; background: var(--night-2); color: var(--fg); font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: inset 0 0 0 1px var(--line); }
 .chip .ic { color: var(--el); }
 .chip[aria-pressed="true"] { background: color-mix(in srgb, var(--el) 30%, var(--night-2)); box-shadow: inset 0 0 0 2px var(--el); }
 .roster { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; }

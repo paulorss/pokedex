@@ -45,10 +45,11 @@ active_rooms: dict[str, dict[str, Any]] = {}
 # invite_id -> {"from_user": dict, "to_user": dict}
 pending_invites: dict[str, dict[str, Any]] = {}
 
-BOT_NAMES = ["Mestra Aruá", "Velho Timbó", "Guardiã Jaci", "Andarilho Caué", "Dona Iracema", "Menino Tico"]
-DEFAULT_AVATAR = 1
+BOT_NAMES = ["Líder Brock", "Líder Misty", "Campeão Lance", "Treinador Red", "Campeã Cynthia", "Treinadora Dawn"]
+DEFAULT_AVATAR = 25
+STARTER_AVATARS = [1, 4, 7, 25, 39, 94, 133, 143, 150, 248, 448, 658]
 POLL_SECONDS = 0.2
-EVENT_SECONDS = float(os.environ.get("DUELO_EVENT_SECONDS", "1.25"))  # o teste automatizado acelera;   # tempo que o cliente leva para animar cada evento
+EVENT_SECONDS = float(os.environ.get("DUELO_EVENT_SECONDS", "1.25"))  # tempo para animação dos eventos
 RESULT_PADDING = 0.9
 
 
@@ -337,7 +338,7 @@ async def handle_ws_message(user_id: int, user: dict[str, Any], ws: WebSocket, d
 
     elif action == "start_bot_battle":
         bot = {"id": None, "username": "", "display_name": random.choice(BOT_NAMES),
-               "avatar_id": random.randint(1, 20), "rating": 1000}
+               "avatar_id": random.choice(STARTER_AVATARS), "rating": 1000}
         await _start_bot_room(user, ws, bot, "treino")
 
     elif action == "accept_challenge":

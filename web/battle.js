@@ -1,4 +1,4 @@
-/* Duelo dos Encantados — cliente (salão, draft, rodadas e narração). */
+/* Arena Pokémon Online — cliente (salão, draft dos 1.025 Pokémon, rodadas 3D e narração). */
 (function () {
   "use strict";
 
@@ -10,48 +10,45 @@
   const TOAST_MS = 4200;
   const TICKER_LINES = 3;
   const LOW_HP = 0.25, MID_HP = 0.5;
+  const PAGE_STEP = 48;
+  const STARTER_AVATARS = [1, 4, 7, 25, 39, 94, 133, 143, 150, 248, 448, 658];
 
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const icon = (n) => `<svg class="ic" aria-hidden="true"><use href="#i-${n}"/></svg>`;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const spriteUrl = (id) => `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`;
+  const artUrl = (id) => `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`;
 
   const S = {
-    token: localStorage.getItem(TOKEN_KEY) || "", user: null, rules: null, ws: null, started: false,
+    token: localStorage.getItem(TOKEN_KEY) || "", user: null, rules: null, rosterMap: new Map(), ws: null, started: false,
     role: 1, roomId: null, opponent: null, game: null, live: null,
-    team: [], locked: false, filter: "", avatar: 1, mode: "login",
+    team: [], locked: false, filter: "", search: "", sort: "id", limit: PAGE_STEP, avatar: 25, mode: "login",
     inviteId: null, inviteTimer: null, offlineTarget: null, arena: null, chosen: null, queue: Promise.resolve(),
   };
 
-  /* ================= retratos 2D (SVG procedural) ================= */
-  const eye = (x, y) => `<circle cx="${x}" cy="${y}" r="4.6" fill="#fff"/><circle cx="${x + 1}" cy="${y + 0.4}" r="2.3" fill="#101418"/>`;
-  const ADORN = {
-    brasa: (x, y, c) => `<path d="M${x} ${y - 15}q7 8 3 14q-3 4-6 0q-4-6 3-14z" fill="${c}"/>`,
-    mata: (x, y, c) => `<path d="M${x} ${y}q-12-9-5-17q11 2 5 17z" fill="${c}"/><path d="M${x} ${y}q12-7 8-16q-10 1-8 16z" fill="${c}" opacity=".8"/>`,
-    mare: (x, y, c) => `<path d="M${x} ${y - 15}q8 9 0 15q-8-6 0-15z" fill="${c}"/>`,
-    pedra: (x, y, c) => `<path d="M${x} ${y - 15}l6 8-6 8-6-8z" fill="${c}"/>`,
-    vento: (x, y, c) => `<path d="M${x - 9} ${y - 5}q9-10 16-1q-3 7-9 2" fill="none" stroke="${c}" stroke-width="3" stroke-linecap="round"/>`,
-  };
-  const FORMS = {
-    bicho: (a, b) => [`<path d="M34 36L29 10 47 27zM66 36L71 10 53 27z" fill="${a}"/><ellipse cx="50" cy="66" rx="26" ry="23" fill="${a}"/><ellipse cx="50" cy="71" rx="15" ry="14" fill="${b}"/><ellipse cx="38" cy="88" rx="9" ry="5" fill="${a}"/><ellipse cx="62" cy="88" rx="9" ry="5" fill="${a}"/><circle cx="50" cy="39" r="20" fill="${a}"/>${eye(42, 37)}${eye(58, 37)}`, 50, 20],
-    quadrupede: (a, b) => [`<path d="M18 58q-12-4-10-16" fill="none" stroke="${b}" stroke-width="6" stroke-linecap="round"/><rect x="20" y="68" width="9" height="20" rx="4.500" fill="${a}"/><rect x="33" y="70" width="9" height="18" rx="4.500" fill="${a}"/><rect x="52" y="70" width="9" height="18" rx="4.500" fill="${a}"/><rect x="64" y="68" width="9" height="20" rx="4.500" fill="${a}"/><ellipse cx="46" cy="62" rx="30" ry="17" fill="${a}"/><path d="M64 34l-2-14 11 9zM82 32l5-13 4 14z" fill="${b}"/><circle cx="74" cy="44" r="16" fill="${a}"/><ellipse cx="86" cy="50" rx="8" ry="6" fill="${b}"/>${eye(70, 41)}${eye(81, 40)}`, 74, 26],
-    ave: (a, b) => [`<path d="M34 52Q6 38 8 66q14 5 27-2zM66 52q28-14 26 14q-14 5-27-2z" fill="${a}"/><path d="M44 80l-4 10M56 80l4 10" stroke="${b}" stroke-width="4" stroke-linecap="round"/><ellipse cx="50" cy="60" rx="20" ry="24" fill="${a}"/><ellipse cx="50" cy="66" rx="12" ry="15" fill="${b}"/><circle cx="50" cy="33" r="15" fill="${a}"/><path d="M45 37h10l-5 9z" fill="${b}"/>${eye(43, 31)}${eye(57, 31)}`, 50, 16],
-    serpente: (a, b) => [`<path d="M20 84q24 10 40-6t-10-22t12-24" fill="none" stroke="${a}" stroke-width="18" stroke-linecap="round"/><path d="M20 84q24 10 40-6t-10-22" fill="none" stroke="${b}" stroke-width="5" stroke-linecap="round" stroke-dasharray="2 14"/><circle cx="62" cy="30" r="16" fill="${a}"/><ellipse cx="70" cy="37" rx="8" ry="5" fill="${b}"/>${eye(56, 27)}${eye(68, 26)}`, 60, 12],
-    golem: (a, b) => [`<circle cx="19" cy="56" r="13" fill="${a}"/><circle cx="81" cy="56" r="13" fill="${a}"/><circle cx="17" cy="74" r="9" fill="${b}"/><circle cx="83" cy="74" r="9" fill="${b}"/><rect x="34" y="76" width="12" height="14" rx="5" fill="${a}"/><rect x="54" y="76" width="12" height="14" rx="5" fill="${a}"/><rect x="26" y="34" width="48" height="48" rx="19" fill="${a}"/><ellipse cx="50" cy="62" rx="14" ry="12" fill="${b}"/><circle cx="50" cy="26" r="13" fill="${a}"/>${eye(45, 25)}${eye(55, 25)}`, 50, 11],
-  };
-  function portrait(c) {
-    const [a, b] = c.colors;
-    const [body, ax, ay] = (FORMS[c.form] || FORMS.bicho)(a, b);
-    const adorn = (ADORN[c.element] || (() => ""))(ax, ay, b);
-    return `<span class="portrait"><svg viewBox="0 0 100 100" aria-hidden="true"><ellipse cx="50" cy="91" rx="28" ry="5" fill="#0005"/>${body}${adorn}</svg></span>`;
+  /* ================= retratos Pokémon ================= */
+  function portrait(c, useArt = false) {
+    const id = c?.id || 25;
+    const primary = useArt ? artUrl(id) : spriteUrl(id);
+    const fallback = useArt ? spriteUrl(id) : artUrl(id);
+    return `<span class="portrait"><img src="${primary}" alt="${esc(c?.name || "")}" loading="lazy" onerror="this.onerror=null;this.src='${fallback}'"/></span>`;
   }
-  const creature = (id) => S.rules.roster.find((c) => c.id === id);
-  const avatarOf = (avatarId) => S.rules.roster[(Math.max(1, Number(avatarId) || 1) - 1) % S.rules.roster.length];
-  const elName = (el) => S.rules.elements[el].name;
-  const elChip = (el) => `<span class="el-chip e-${el}">${icon(el)}${esc(elName(el))}</span>`;
+  const creature = (id) => S.rosterMap.get(Number(id)) || S.rules?.roster?.[0];
+  const avatarOf = (avatarId) => S.rosterMap.get(Number(avatarId)) || S.rosterMap.get(25) || S.rules?.roster?.[0] || { id: 25, name: "Pikachu", element: "electric" };
+  const elName = (el) => S.rules?.elements?.[el]?.name || el;
+  const elIcon = (el) => `<span class="type-dot e-${esc(el)}" aria-hidden="true"></span>`;
+  const elChip = (el) => `<span class="el-chip e-${esc(el)}">${elIcon(el)}${esc(elName(el))}</span>`;
   function setAvatar(node, avatarId) {
     const c = avatarOf(avatarId);
     node.className = `avatar lg e-${c.element}`;
-    node.innerHTML = portrait(c);
+    node.innerHTML = portrait(c, false);
+  }
+  function trainerTier(rating = 1000) {
+    if (rating >= 1300) return "Campeão";
+    if (rating >= 1150) return "Elite Four";
+    if (rating >= 1060) return "Líder de Ginásio";
+    if (rating >= 980) return "Desafiante";
+    return "Iniciante";
   }
 
   /* ================= notificações ================= */
@@ -126,8 +123,10 @@
     $("#duelAuthMsg").textContent = "";
   }
   function renderAvatarPicker() {
-    $("#avatarPicker").innerHTML = S.rules.roster.map((c) =>
-      `<button type="button" role="radio" class="e-${c.element}" aria-checked="${c.id === S.avatar}" aria-label="${esc(c.name)}" title="${esc(c.name)}" data-id="${c.id}">${portrait(c)}</button>`).join("");
+    $("#avatarPicker").innerHTML = STARTER_AVATARS.map((id) => {
+      const c = avatarOf(id);
+      return `<button type="button" role="radio" class="e-${c.element}" aria-checked="${c.id === S.avatar}" aria-label="${esc(c.name)}" title="${esc(c.name)}" data-id="${c.id}">${portrait(c)}</button>`;
+    }).join("");
   }
   async function submitAuth() {
     const username = $("#duelUser").value.trim(), password = $("#duelPass").value;
@@ -163,7 +162,8 @@
     if (user) S.user = user;
     setAvatar($("#meAvatar"), S.user.avatar_id);
     $("#meName").textContent = S.user.display_name;
-    $("#meStats").textContent = `${S.user.rating} pontos · ${S.user.wins} vitórias · ${S.user.losses} derrotas`;
+    $("#meTier").textContent = trainerTier(S.user.rating);
+    $("#meStats").textContent = `${S.user.rating} pts · ${S.user.wins} vitórias · ${S.user.losses} derrotas`;
     show("duelLobby");
     refreshBoards();
   }
@@ -183,56 +183,107 @@
   }
   function renderTrainers(trainers) {
     const others = trainers.filter((t) => t.id !== S.user.id);
+    const onlineCount = others.filter((t) => t.is_online).length;
+    if ($("#onlineBadge")) $("#onlineBadge").textContent = `${onlineCount} online`;
     $("#trainerList").innerHTML = others.map((t) => {
       const c = avatarOf(t.avatar_id);
       const status = t.in_battle ? "busy" : t.is_online ? "on" : "";
-      const label = t.in_battle ? "Em duelo" : t.is_online ? "Desafiar" : "Enfrentar eco";
-      return `<li><span class="presence ${status}" title="${t.is_online ? "Conectado" : "Desconectado"}"></span><span class="avatar e-${c.element}">${portrait(c)}</span>
-        <span class="who"><b>${esc(t.display_name)}</b><small>${t.rating} pontos</small></span>
+      const statusTxt = t.in_battle ? "Em batalha" : t.is_online ? "Online" : "Offline";
+      const label = t.in_battle ? "Ocupado" : t.is_online ? "Desafiar" : "Vs Eco IA";
+      return `<li><span class="presence ${status}" title="${statusTxt}"></span><span class="avatar e-${c.element}">${portrait(c)}</span>
+        <span class="who"><b>${esc(t.display_name)}</b><small>@${esc(t.username)} · ${t.rating} pts · ${statusTxt}</small></span>
         <button class="btn" data-challenge="${t.id}" ${t.in_battle ? "disabled" : ""}>${label}</button></li>`;
-    }).join("") || `<li class="empty-row">Nenhum outro treinador cadastrado. Convide alguém ou treine contra a IA.</li>`;
+    }).join("") || `<li class="empty-row">Nenhum outro treinador cadastrado ainda. Convide um amigo ou treine contra a IA!</li>`;
   }
   function renderRules() {
     const r = S.rules;
-    const wheel = Object.keys(r.elements).map((el) =>
-      `<li>${elChip(el)} vence ${r.strong_against[el].map(elChip).join(" e ")}</li>`).join("");
+    const wheel = Object.keys(r.elements).filter((el) => (r.strong_against[el] || []).length > 0).map((el) =>
+      `<li>${elChip(el)} vence ${(r.strong_against[el] || []).map(elChip).join(" ")}</li>`).join("");
     $("#rulesBody").innerHTML = `
-      <p>Escolha <b>${r.team_size} Encantados</b> gastando até <b>${r.team_budget} pontos</b>. A cada rodada, você e o oponente escolhem uma ação ao mesmo tempo, em até ${r.round_seconds} segundos.</p>
+      <p>Escolha <b>${r.team_size} Pokémon</b> dentre os <b>${r.roster.length} da Pokédex</b> respeitando o limite de <b>${r.team_budget} SP (Stamina)</b>. Você tem ${r.draft_seconds}s para montar o trio (se o tempo acabar, o restante é preenchido automaticamente). A cada rodada, os dois treinadores escolhem em segredo em até ${r.round_seconds}s.</p>
       <ul>
-        <li><b>Golpe</b>: dano básico e +1 de Foco.</li>
-        <li><b>Técnica</b>: gasta ${r.tech_cost} de Foco, causa dano alto e aplica o efeito próprio do Encantado.</li>
-        <li><b>Guarda</b>: amortece o que vier e rende +2 de Foco. Não pode ser usada duas rodadas seguidas.</li>
-        <li><b>Trocar</b>: o reserva entra antes dos ataques. Não dá para trocar duas rodadas seguidas.</li>
+        <li><b>Golpe</b>: ataque físico/rápido de base e gera <b>+1 Foco</b>.</li>
+        <li><b>Técnica</b>: gasta <b>${r.tech_cost} de Foco</b>, golpe especial do tipo com alto dano e efeito tático (Queimar, Drenar Foco, Regenerar, Quebrar Guarda ou Ímpeto prioritário).</li>
+        <li><b>Guarda</b>: amortece ataques e rende <b>+2 de Foco</b>. Não pode ser usada 2 rodadas seguidas.</li>
+        <li><b>Trocar</b>: envia outro Pokémon do trio antes dos golpes, aproveitando vantagens de tipo.</li>
       </ul>
-      <p>O mais veloz ataca primeiro. Vence quem derrubar os três adversários.</p>
+      <p>O mais rápido ataca primeiro. Vence quem derrotar os ${r.team_size} Pokémon do adversário.</p>
       <ul class="wheel">${wheel}</ul>`;
   }
 
   /* ---------- draft ---------- */
-  const teamCost = () => S.team.reduce((sum, id) => sum + creature(id).cost, 0);
+  const teamCost = () => S.team.reduce((sum, id) => sum + (creature(id)?.cost || 0), 0);
+  function getFilteredRoster() {
+    const q = (S.search || "").trim().toLowerCase();
+    const list = S.rules.roster.filter((c) => {
+      if (S.filter && !(c.types || [c.element]).includes(S.filter)) return false;
+      if (!q) return true;
+      return c.name.toLowerCase().includes(q)
+        || String(c.id).includes(q)
+        || (c.types_pt || []).some((t) => t.toLowerCase().includes(q));
+    });
+    if (S.sort === "cost-asc") list.sort((a, b) => a.cost - b.cost || a.id - b.id);
+    else if (S.sort === "cost-desc") list.sort((a, b) => b.cost - a.cost || a.id - b.id);
+    else if (S.sort === "spd-desc") list.sort((a, b) => b.spd - a.spd || a.id - b.id);
+    else if (S.sort === "atk-desc") list.sort((a, b) => b.atk - a.atk || a.id - b.id);
+    else if (S.sort === "hp-desc") list.sort((a, b) => b.hp - a.hp || a.id - b.id);
+    else list.sort((a, b) => a.id - b.id);
+    return list;
+  }
   function renderDraft() {
     const r = S.rules, cost = teamCost(), left = r.team_budget - cost;
-    $("#budgetFill").style.transform = `scaleX(${cost / r.team_budget})`;
-    $("#budgetText").textContent = `${cost} de ${r.team_budget} pontos`;
+    $("#budgetFill").style.transform = `scaleX(${Math.min(1, cost / r.team_budget)})`;
+    $("#budgetText").textContent = `${cost} / ${r.team_budget} SP (${left} SP livres)`;
     $("#draftSlots").innerHTML = Array.from({ length: r.team_size }, (_, i) => {
-      const c = creature(S.team[i]);
+      const c = S.team[i] ? creature(S.team[i]) : null;
       return c
-        ? `<button class="slot filled e-${c.element}" data-remove="${c.id}" ${S.locked ? "disabled" : ""} aria-label="Remover ${esc(c.name)}">${portrait(c)}<span><b>${esc(c.name)}</b>${esc(elName(c.element))} · ${c.cost} pts</span></button>`
+        ? `<button class="slot filled e-${c.element}" data-remove="${c.id}" ${S.locked ? "disabled" : ""} aria-label="Remover ${esc(c.name)}">${portrait(c)}<span><b>#${c.id} ${esc(c.name)}</b>${esc((c.types_pt || [elName(c.element)]).join(" / "))} · ${c.cost} SP</span></button>`
         : `<div class="slot">Vaga ${i + 1}</div>`;
     }).join("");
     $("#elementChips").innerHTML = [["", "Todos"], ...Object.keys(r.elements).map((el) => [el, elName(el)])].map(([el, name]) =>
-      `<button class="chip ${el ? `e-${el}` : ""}" aria-pressed="${S.filter === el}" data-filter="${el}">${el ? icon(el) : ""}${esc(name)}</button>`).join("");
-    $("#rosterGrid").innerHTML = r.roster.filter((c) => !S.filter || c.element === S.filter).map((c) => {
+      `<button class="chip ${el ? `e-${el}` : ""}" aria-pressed="${S.filter === el}" data-filter="${el}">${el ? elIcon(el) : ""}${esc(name)}</button>`).join("");
+
+    const filtered = getFilteredRoster();
+    const visible = filtered.slice(0, S.limit);
+    $("#draftMatchCount").textContent = `Exibindo ${visible.length} de ${filtered.length} Pokémon disponíveis`;
+    $("#rosterMoreWrap").hidden = visible.length >= filtered.length;
+
+    $("#rosterGrid").innerHTML = visible.map((c) => {
       const picked = S.team.includes(c.id);
       const blocked = S.locked || (!picked && (S.team.length >= r.team_size || c.cost > left));
       return `<button class="pick e-${c.element}" data-pick="${c.id}" aria-pressed="${picked}" ${blocked ? "disabled" : ""}>
-        ${portrait(c)}<b>${icon(c.element)}${esc(c.name)}</b><span class="cost" title="Custo em pontos">${c.cost} pts</span>
-        <span class="meta">${esc(elName(c.element))} · Vida ${c.hp} · Atq ${c.atk} · Def ${c.def} · Vel ${c.spd}</span>
-        <span class="tech">${esc(c.tech.name)}: ${esc(c.tech.effect_text.toLowerCase())}</span></button>`;
-    }).join("");
+        ${portrait(c)}<b>${elIcon(c.element)}#${c.id} ${esc(c.name)}</b><span class="cost" title="Custo em Stamina">${c.cost} SP</span>
+        <span class="meta">${esc((c.types_pt || [elName(c.element)]).join("/"))} · HP ${c.hp} · Atq ${c.atk} · Def ${c.def} · Vel ${c.spd}</span>
+        <span class="tech">${esc(c.tech.name)}: ${esc(c.tech.effect_text)}</span></button>`;
+    }).join("") || `<p style="grid-column:1/-1;color:var(--fg-soft)">Nenhum Pokémon encontrado para este filtro.</p>`;
+
     const btn = $("#btnLockTeam");
     btn.disabled = S.locked || S.team.length !== r.team_size;
     $("span", btn).textContent = S.locked ? "Trio confirmado" : S.team.length === r.team_size ? "Confirmar trio" : `Escolha ${r.team_size - S.team.length}`;
+    if ($("#btnAutoPick")) $("#btnAutoPick").disabled = S.locked || S.team.length >= r.team_size;
+  }
+  function autoFillDraft() {
+    if (S.locked) return;
+    const r = S.rules;
+    const picked = [...S.team];
+    let spent = teamCost();
+    const usedEls = new Set(picked.map((id) => creature(id)?.element));
+    while (picked.length < r.team_size) {
+      const slotsLeft = r.team_size - picked.length;
+      const maxAllow = r.team_budget - spent - 200 * (slotsLeft - 1);
+      let candidates = r.roster.filter((c) => !picked.includes(c.id) && c.cost <= maxAllow);
+      if (!candidates.length) candidates = [...r.roster].filter((c) => !picked.includes(c.id)).sort((a, b) => a.cost - b.cost);
+      if (!candidates.length) break;
+      const diverse = candidates.filter((c) => !usedEls.has(c.element) && c.cost >= 320 && c.cost <= 560);
+      const pool = diverse.length ? diverse : candidates;
+      const chosen = pool[Math.floor(Math.random() * pool.length)];
+      picked.push(chosen.id);
+      usedEls.add(chosen.element);
+      spent += chosen.cost;
+    }
+    S.team = picked;
+    renderDraft();
+    send("draft_update", { room_id: S.roomId, team_ids: S.team, locked: false });
   }
   function togglePick(id) {
     if (S.locked) return;
@@ -262,7 +313,7 @@
     const fig = (side) => $(`.fig.${side}`, container);
     const pulse = async (el, cls, ms) => { el.classList.add(cls); await sleep(ms); el.classList.remove(cls); };
     return {
-      setCreature(side, def) { const el = fig(side); el.classList.remove("down", "guard"); el.innerHTML = portrait(def); return Promise.resolve(); },
+      setCreature(side, def) { const el = fig(side); el.classList.remove("down", "guard"); el.innerHTML = portrait(def, true); return Promise.resolve(); },
       async play(ev, side, def) {
         const el = fig(side), foe = fig(side === "me" ? "foe" : "me");
         if (ev.t === "attack") { await pulse(el, side === "me" ? "lunge-r" : "lunge-l", 260); await pulse(foe, "hit", 220); }
@@ -300,7 +351,7 @@
     const root = $(side === "me" ? "#plateMe" : "#plateFoe");
     root.className = `plate ${side} e-${c.element}`;
     $("[data-owner]", root).textContent = g[`p${player}_name`];
-    $("[data-el]", root).innerHTML = icon(c.element);
+    $("[data-el]", root).innerHTML = elIcon(c.element);
     $("[data-name]", root).textContent = c.name;
     $("[data-hp]", root).textContent = `${c.hp}/${c.max_hp}`;
     const ratio = c.hp / c.max_hp, bar = $("[data-bar]", root);
@@ -471,7 +522,9 @@
       $("#duelOffline").showModal();
     },
     battle_matched(msg) {
-      Object.assign(S, { roomId: msg.room_id, role: msg.role, opponent: msg.opponent, game: msg.state, team: [], locked: false, filter: "" });
+      Object.assign(S, { roomId: msg.room_id, role: msg.role, opponent: msg.opponent, game: msg.state, team: [], locked: false, filter: "", search: "", sort: "id", limit: PAGE_STEP });
+      if ($("#draftSearch")) $("#draftSearch").value = "";
+      if ($("#draftSort")) $("#draftSort").value = "id";
       for (const id of ["duelInvite", "duelOffline"]) if ($(`#${id}`).open) $(`#${id}`).close();
       setDraftTimer(msg.state.draft_timer);
       setOpponentDraft(msg.opponent.is_bot ? S.rules.team_size : 0, Boolean(msg.opponent.is_bot));
@@ -488,7 +541,7 @@
         updatePlate("me", S.game); updatePlate("foe", S.game);
         $("#roundChip").textContent = "Preparar";
         renderControls(false);
-        setHint("Os Encantados entram na arena…");
+        setHint("Os Pokémon entram na arena!");
         createArena();
         show("duelArena");
         narrate(S.game.logs[S.game.logs.length - 1]);
@@ -506,7 +559,7 @@
         $("#roundChip").textContent = `Rodada ${S.game.round_no}`;
         updatePlate("me", S.game); updatePlate("foe", S.game); setReady(S.game);
         renderControls(true);
-        setHint("Escolha sua ação. Sem escolha, seu Encantado usa Golpe.");
+        setHint("Escolha sua ação. Sem escolha, seu Pokémon usa Golpe.");
         runTurnBar(S.game.round_seconds);
       });
     },
@@ -522,7 +575,7 @@
         if (S.arena && msg.winner) await Promise.race([S.arena.celebrate(sideOf(msg.winner)), sleep(900)]);
         const dlg = $("#duelResult");
         dlg.classList.toggle("win", won);
-        $("#resultArt").innerHTML = (teamOf(msg.state, msg.winner || S.role) || []).map((c) => `<span class="e-${c.element}">${portrait(c)}</span>`).join("");
+        $("#resultArt").innerHTML = (teamOf(msg.state, msg.winner || S.role) || []).map((c) => `<span class="e-${c.element}">${portrait(c, true)}</span>`).join("");
         $("#resultTitle").textContent = won ? "Vitória!" : "Derrota";
         const last = msg.state.logs[msg.state.logs.length - 1] || "";
         $("#resultMsg").textContent = won
@@ -580,8 +633,24 @@
       const b = e.target.closest("[data-filter]");
       if (!b) return;
       S.filter = b.dataset.filter;
+      S.limit = PAGE_STEP;
       renderDraft();
     });
+    $("#draftSearch").addEventListener("input", (e) => {
+      S.search = e.target.value;
+      S.limit = PAGE_STEP;
+      renderDraft();
+    });
+    $("#draftSort").addEventListener("change", (e) => {
+      S.sort = e.target.value;
+      S.limit = PAGE_STEP;
+      renderDraft();
+    });
+    $("#btnLoadMoreRoster").addEventListener("click", () => {
+      S.limit += PAGE_STEP;
+      renderDraft();
+    });
+    $("#btnAutoPick").addEventListener("click", autoFillDraft);
     $("#btnLockTeam").addEventListener("click", () => {
       S.locked = true;
       renderDraft();
@@ -610,6 +679,7 @@
     S.started = true;
     try {
       S.rules = await api("/rules");
+      S.rosterMap = new Map((S.rules.roster || []).map((c) => [c.id, c]));
     } catch (err) {
       S.started = false;
       $("#duelAuth").hidden = false;

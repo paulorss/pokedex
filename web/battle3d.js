@@ -40,6 +40,26 @@
       vec3 c = uColor * shade + uRim * rim * 0.7;
       gl_FragColor = vec4(mix(c, vec3(1.0), uFlash), uFade);
     }`;
+  const SPRITE_VS = `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
+  const SPRITE_FS = `
+    uniform sampler2D uTex; uniform float uHasTex; uniform float uFlip;
+    uniform vec3 uColor; uniform vec3 uRim; uniform float uFlash; uniform float uFade;
+    varying vec2 vUv;
+    void main() {
+      if (uHasTex > 0.5) {
+        vec2 uv = vec2(uFlip > 0.5 ? 1.0 - vUv.x : vUv.x, vUv.y);
+        vec4 tex = texture2D(uTex, uv);
+        if (tex.a < 0.08) discard;
+        vec3 col = mix(tex.rgb, vec3(1.0), uFlash);
+        gl_FragColor = vec4(col, tex.a * uFade);
+      } else {
+        float d = length(vUv - 0.5);
+        if (d > 0.42) discard;
+        float glow = smoothstep(0.42, 0.05, d);
+        vec3 c = mix(uColor, uRim, 0.35) * glow;
+        gl_FragColor = vec4(mix(c, vec3(1.0), uFlash), glow * 0.85 * uFade);
+      }
+    }`;
   const GROUND_VS = `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
   const GROUND_FS = `
     uniform float uTime; uniform vec3 uA; uniform vec3 uB; uniform float uPulse; uniform vec2 uPulsePos;
@@ -127,7 +147,37 @@
       torus: track(new THREE.TorusGeometry(1, 0.06, 6, 28)),
       ring: track(new THREE.RingGeometry(0.72, 1, 40)),
       disc: track(new THREE.CircleGeometry(1, 24)),
+      plane: track(new THREE.PlaneGeometry(2.55, 2.55)),
     };
+    const texLoader = new THREE.TextureLoader();
+    texLoader.setCrossOrigin("anonymous");
+    const texCache = new Map();
+    const artworkUrl = (id) => `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`;
+    const spriteUrl = (id) => `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`;
+    function loadPokemonTex(id, onLoad) {
+      if (texCache.has(id)) {
+        const cached = texCache.get(id);
+        if (cached) onLoad(cached);
+        return;
+      }
+      texLoader.load(
+        artworkUrl(id),
+        (tex) => {
+          tex.encoding = THREE.sRGBEncoding;
+          texCache.set(id, tex);
+          onLoad(tex);
+        },
+        undefined,
+        () => {
+          texLoader.load(
+            spriteUrl(id),
+            (tex) => { tex.encoding = THREE.sRGBEncoding; texCache.set(id, tex); onLoad(tex); },
+            undefined,
+            () => { texCache.set(id, null); }
+          );
+        }
+      );
+    }
     const matWhite = track(new THREE.MeshBasicMaterial({ color: 0xffffff }));
     const matPupil = track(new THREE.MeshBasicMaterial({ color: 0x101418 }));
     const matShadow = track(new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false }));
@@ -215,106 +265,63 @@
     }
     function addShake(amount) { if (!reduceMotion) shake = Math.max(shake, amount); }
 
-    /* ---------- criaturas ---------- */
-    function toonMat(hex, rimHex) {
-      return track(new THREE.ShaderMaterial({ vertexShader: TOON_VS, fragmentShader: TOON_FS,
-        uniforms: { uColor: { value: new THREE.Color(hex) }, uRim: { value: new THREE.Color(rimHex) }, uFlash: { value: 0 }, uFade: { value: 1 } } }));
-    }
-    function part(parent, g, mat, s, p, r) {
-      const m = new THREE.Mesh(g, mat);
-      m.scale.set(s[0], s[1] ?? s[0], s[2] ?? s[0]);
-      m.position.set(p[0], p[1], p[2]);
-      if (r) m.rotation.set(r[0], r[1], r[2]);
-      parent.add(m);
-      return m;
-    }
-    function eyes(parent, x, y, z) {
-      for (const sign of [-1, 1]) {
-        part(parent, geo.sphere, matWhite, [0.1], [x, y, z * sign]);
-        part(parent, geo.sphere, matPupil, [0.055], [x + 0.065, y, z * sign * 1.02]);
-      }
+    /* ---------- Pokémon 3D (artwork oficial + aura elemental) ---------- */
+    function spriteMat(hex, rimHex, flipX) {
+      return track(new THREE.ShaderMaterial({
+        vertexShader: SPRITE_VS,
+        fragmentShader: SPRITE_FS,
+        transparent: true,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        uniforms: {
+          uTex: { value: null },
+          uHasTex: { value: 0 },
+          uFlip: { value: flipX ? 1 : 0 },
+          uColor: { value: new THREE.Color(hex) },
+          uRim: { value: new THREE.Color(rimHex) },
+          uFlash: { value: 0 },
+          uFade: { value: 1 },
+        },
+      }));
     }
 
-    const FORMS = {
-      bicho(g, A, B, anim) {
-        part(g, geo.sphere, A, [0.62, 0.6, 0.58], [0, 0.62, 0]);
-        part(g, geo.sphere, B, [0.4, 0.42, 0.4], [0.24, 0.56, 0]);
-        part(g, geo.sphere, A, [0.46], [0.12, 1.32, 0]);
-        for (const s of [-1, 1]) {
-          part(g, geo.cone, A, [0.2, 0.46, 0.2], [0.04, 1.84, 0.27 * s], [0.25 * s, 0, 0]);
-          part(g, geo.sphere, A, [0.22, 0.12, 0.2], [0.14, 0.1, 0.28 * s]);
-          anim.arms.push(part(g, geo.sphere, A, [0.14, 0.26, 0.14], [0.2, 0.78, 0.6 * s]));
-        }
-        part(g, geo.sphere, B, [0.2], [-0.62, 0.5, 0]);
-        eyes(g, 0.5, 1.4, 0.18);
-        return [0.12, 1.9, 0];
-      },
-      quadrupede(g, A, B, anim) {
-        part(g, geo.sphere, A, [0.85, 0.5, 0.5], [0, 0.78, 0]);
-        part(g, geo.sphere, A, [0.42], [0.9, 1.12, 0]);
-        part(g, geo.sphere, B, [0.22, 0.18, 0.24], [1.26, 1.02, 0]);
-        for (const sx of [-1, 1]) for (const sz of [-1, 1]) part(g, geo.cyl, A, [0.14, 0.56, 0.14], [0.5 * sx, 0.28, 0.28 * sz]);
-        for (const s of [-1, 1]) part(g, geo.cone, B, [0.15, 0.36, 0.15], [0.8, 1.58, 0.25 * s], [0.3 * s, 0, 0]);
-        anim.tail = part(g, geo.cone, B, [0.13, 0.7, 0.13], [-0.98, 1.0, 0], [0, 0, 1.0]);
-        eyes(g, 1.22, 1.22, 0.2);
-        return [0.9, 1.62, 0];
-      },
-      ave(g, A, B, anim) {
-        anim.hover = 0.35;
-        part(g, geo.sphere, A, [0.5, 0.58, 0.48], [0, 1.05, 0]);
-        part(g, geo.sphere, B, [0.34, 0.4, 0.36], [0.2, 0.95, 0]);
-        part(g, geo.sphere, A, [0.34], [0.3, 1.7, 0]);
-        part(g, geo.cone, B, [0.13, 0.34, 0.13], [0.72, 1.66, 0], [0, 0, -Math.PI / 2]);
-        for (const s of [-1, 1]) {
-          const pivot = new THREE.Group(); pivot.position.set(-0.05, 1.25, 0.4 * s); g.add(pivot);
-          part(pivot, geo.sphere, A, [0.3, 0.08, 0.6], [0, 0, 0.5 * s]);
-          part(pivot, geo.sphere, B, [0.2, 0.06, 0.34], [-0.08, -0.02, 0.95 * s]);
-          anim.wings.push({ pivot, sign: s });
-        }
-        part(g, geo.cone, B, [0.22, 0.6, 0.08], [-0.62, 0.86, 0], [0, 0, 2.2]);
-        eyes(g, 0.56, 1.8, 0.16);
-        return [0.25, 2.06, 0];
-      },
-      serpente(g, A, B, anim) {
-        const seg = [[0.15, 0.78, 0, 0.4], [-0.12, 0.5, 0.1, 0.38], [-0.44, 0.38, -0.12, 0.34], [-0.78, 0.33, 0.14, 0.3], [-1.1, 0.28, -0.1, 0.24], [-1.38, 0.22, 0.06, 0.17]];
-        seg.forEach(([x, y, z, r], i) => anim.segments.push(part(g, geo.sphere, i % 2 ? B : A, [r], [x, y, z])));
-        part(g, geo.sphere, A, [0.46, 0.42, 0.42], [0.36, 1.1, 0]);
-        part(g, geo.sphere, B, [0.24, 0.16, 0.26], [0.72, 1.0, 0]);
-        eyes(g, 0.72, 1.22, 0.2);
-        return [0.3, 1.58, 0];
-      },
-      golem(g, A, B, anim) {
-        part(g, geo.sphere, A, [0.78, 0.72, 0.62], [0, 0.98, 0]);
-        part(g, geo.sphere, B, [0.5, 0.44, 0.46], [0.3, 0.9, 0]);
-        part(g, geo.sphere, A, [0.34], [0.15, 1.8, 0]);
-        for (const s of [-1, 1]) {
-          anim.arms.push(part(g, geo.sphere, A, [0.3, 0.52, 0.3], [0.15, 0.88, 0.92 * s]));
-          part(g, geo.sphere, B, [0.3], [0.27, 0.4, 0.95 * s]);
-          part(g, geo.cyl, A, [0.26, 0.44, 0.26], [0, 0.22, 0.34 * s]);
-          part(g, geo.octa, B, [0.2, 0.46, 0.2], [-0.5, 1.62, 0.3 * s], [0, 0, 0.5]);
-        }
-        eyes(g, 0.44, 1.86, 0.14);
-        return [0.15, 2.18, 0];
-      },
-    };
-    const ADORN = {
-      brasa(g, crown, B, glow, anim) { anim.flame = part(g, geo.cone, glow, [0.17, 0.5, 0.17], [crown[0], crown[1] + 0.2, 0]); },
-      mata(g, crown, B) { for (const s of [-1, 1]) part(g, geo.sphere, B, [0.3, 0.05, 0.13], [crown[0], crown[1] + 0.06, 0.2 * s], [0.5 * s, 0.4 * s, 0.3]); },
-      mare(g, crown, B) { part(g, geo.cone, B, [0.3, 0.46, 0.06], [crown[0] - 0.2, crown[1] + 0.05, 0], [0, 0, 0.5]); },
-      pedra(g, crown, B) { part(g, geo.octa, B, [0.17, 0.3, 0.17], [crown[0], crown[1] + 0.12, 0]); },
-      vento(g, crown, B, glow, anim) { anim.swirl = part(g, geo.torus, glow, [0.95], [0, crown[1] * 0.5, 0], [Math.PI / 2, 0, 0]); },
-    };
-
-    function buildModel(def) {
-      const [c1, c2] = def.colors;
-      const A = toonMat(c1, c2), B = toonMat(c2, 0xffffff);
-      const glow = track(new THREE.MeshBasicMaterial({ color: c2, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
+    function buildModel(def, side) {
+      const [c1, c2] = def.colors || ["#3a9bff", "#ffe082"];
+      const mat = spriteMat(c1, c2, side === "me");
+      const ringMat = track(new THREE.MeshBasicMaterial({
+        color: c1, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false,
+      }));
       const model = new THREE.Group();
-      const anim = { arms: [], wings: [], segments: [], hover: 0, phase: Math.random() * 6 };
-      const crown = (FORMS[def.form] || FORMS.bicho)(model, A, B, anim);
-      (ADORN[def.element] || (() => {}))(model, crown, B, glow, anim);
-      anim.segments.forEach((s) => { s.userData.z0 = s.position.z; });
-      return { model, anim, mats: [A, B], owned: [A, B, glow] };
+      const billboard = new THREE.Mesh(geo.plane, mat);
+      billboard.position.set(0, 1.32, 0);
+      model.add(billboard);
+
+      const baseRing = new THREE.Mesh(geo.torus, ringMat);
+      baseRing.rotation.x = Math.PI / 2;
+      baseRing.position.set(0, 0.05, 0);
+      baseRing.scale.setScalar(0.95);
+      model.add(baseRing);
+
+      const isFlyer = (def.types || []).includes("flying") || (def.types || []).includes("ghost") || (def.types || []).includes("psychic");
+      const anim = {
+        billboard,
+        baseRing,
+        hover: isFlyer ? 0.22 : 0.04,
+        phase: Math.random() * 6,
+      };
+      let disposed = false;
+      loadPokemonTex(def.id, (tex) => {
+        if (disposed) return;
+        mat.uniforms.uTex.value = tex;
+        mat.uniforms.uHasTex.value = 1;
+      });
+      return {
+        model,
+        anim,
+        mats: [mat],
+        owned: [mat, ringMat],
+        markDisposed() { disposed = true; },
+      };
     }
 
     const slots = {};
@@ -336,6 +343,7 @@
 
     function disposeCreature(slot) {
       if (!slot.current) return;
+      if (slot.current.markDisposed) slot.current.markDisposed();
       slot.actor.remove(slot.current.model);
       slot.current.owned.forEach((m) => { m.dispose(); const i = disposables.indexOf(m); if (i >= 0) disposables.splice(i, 1); });
       slot.current = null;
@@ -344,16 +352,18 @@
     function setCreature(side, def, opts = {}) {
       const slot = slots[side];
       disposeCreature(slot);
-      slot.current = buildModel(def);
-      slot.color.set(def.colors[0]);
+      slot.current = buildModel(def, side);
+      const col = (def.colors && def.colors[0]) || "#3a9bff";
+      const col2 = (def.colors && def.colors[1]) || "#ffe082";
+      slot.color.set(col);
       slot.actor.add(slot.current.model);
       slot.offsetX = 0; slot.lift = 0; slot.squash = 1;
       slot.actor.rotation.set(0, 0, 0);
       slot.shadow.visible = true;
-      groundU[side === "me" ? "uA" : "uB"].value.set(def.colors[0]);
+      groundU[side === "me" ? "uA" : "uB"].value.set(col);
       if (!opts.animate) { slot.actor.scale.setScalar(1); return Promise.resolve(); }
       slot.actor.scale.setScalar(0.01);
-      emit(chestOf(side), { count: 26, color: def.colors[1], speed: 2.6, life: 0.7, size: 70, up: 0.6 });
+      emit(chestOf(side), { count: 28, color: col2, speed: 2.6, life: 0.7, size: 70, up: 0.6 });
       groundPulse(side);
       return tween(0.5, (k) => { slot.actor.scale.setScalar(Math.max(0.01, k)); slot.lift = (1 - k) * 2.2; }, easeBack);
     }
@@ -464,14 +474,12 @@
       const a = cur.anim, ph = t * 2 + a.phase;
       const bob = Math.sin(ph) * 0.045 + a.hover + Math.sin(ph * 0.5) * a.hover * 0.35;
       slot.actor.position.set(slot.offsetX, bob + slot.lift, 0);
-      cur.model.scale.set(1 / Math.sqrt(slot.squash), slot.squash * (1 + Math.sin(ph) * 0.018), 1 / Math.sqrt(slot.squash));
-      a.arms.forEach((m, i) => { m.rotation.x = Math.sin(ph + i * Math.PI) * 0.25; });
-      a.wings.forEach((w) => { w.pivot.rotation.x = w.sign * (0.25 + Math.sin(t * 9 + a.phase) * 0.55); });
-      a.segments.forEach((s, i) => { s.position.z = s.userData.z0 + Math.sin(ph * 1.4 - i * 0.9) * 0.07 * (i + 1) * 0.4; });
-      if (a.tail) a.tail.rotation.x = Math.sin(ph * 1.6) * 0.4;
-      if (a.flame) { a.flame.scale.y = 0.5 + Math.sin(t * 13 + a.phase) * 0.08; a.flame.rotation.y = t * 3; }
-      if (a.swirl) a.swirl.rotation.z = t * 2.4;
-      slot.shadow.scale.setScalar(0.9 - Math.min(0.5, (bob + slot.lift) * 0.25));
+      cur.model.scale.set(1 / Math.sqrt(slot.squash), slot.squash * (1 + Math.sin(ph) * 0.02), 1 / Math.sqrt(slot.squash));
+      if (a.billboard) {
+        a.billboard.lookAt(camera.position.x, a.billboard.getWorldPosition(projected).y, camera.position.z);
+      }
+      if (a.baseRing) a.baseRing.rotation.z = t * 1.4;
+      slot.shadow.scale.setScalar(0.95 - Math.min(0.45, (bob + slot.lift) * 0.25));
       slot.shadow.position.x = slot.offsetX;
     }
 
