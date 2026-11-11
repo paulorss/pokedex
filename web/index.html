@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#dc0a2d" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -13,17 +13,44 @@
   <link rel="stylesheet" href="battle.css" />
 </head>
 <body>
+  <!-- ===== Ícones (um único traço, 24×24) ===== -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/></symbol>
+    <symbol id="i-duel" viewBox="0 0 24 24"><path d="M5 5l14 14M19 5L5 19M5 5h4M5 5v4M19 5h-4M19 5v4"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+    <symbol id="i-video" viewBox="0 0 24 24"><rect x="3" y="7" width="12" height="10" rx="2"/><path d="M15 11l6-3v8l-6-3"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
+    <symbol id="i-swap" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14-5l2 2M20 4v5h-5M20 12a8 8 0 0 1-14 5l-2-2M4 20v-5h5"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 3L5 14h6l-1 7 8-11h-6z"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.5"/><path d="M21 16l-5-5-8 8"/></symbol>
+    <symbol id="i-speaker" viewBox="0 0 24 24"><path d="M4 10v4h4l5 4V6L8 10zM16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l2.2 6.8L21 12l-6.8 2.2L12 21l-2.2-6.8L3 12l6.8-2.2z"/></symbol>
+    <symbol id="i-flag" viewBox="0 0 24 24"><path d="M5 21V4M5 5h12l-2 4 2 4H5"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24"><path d="M10 4H5v16h5M15 8l4 4-4 4M19 12H9"/></symbol>
+    <symbol id="i-brasa" viewBox="0 0 24 24"><path d="M12 3c1 4 5 5.500 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-5 1-9z"/></symbol>
+    <symbol id="i-mata" viewBox="0 0 24 24"><path d="M5 19C5 10 10 5 20 4c-1 10-6 15-15 15zM5 19l8-8"/></symbol>
+    <symbol id="i-mare" viewBox="0 0 24 24"><path d="M12 3c4 5 6 8 6 11a6 6 0 0 1-12 0c0-3 2-6 6-11z"/></symbol>
+    <symbol id="i-pedra" viewBox="0 0 24 24"><path d="M12 3l7 5v8l-7 5-7-5V8zM5 8l7 4 7-4M12 12v9"/></symbol>
+    <symbol id="i-vento" viewBox="0 0 24 24"><path d="M3 9h11a3 3 0 1 0-3-3M3 14h15a3 3 0 1 1-3 3M3 19h7"/></symbol>
+  </svg>
+
   <div class="pokedex">
     <!-- ===== Topo ===== -->
     <header class="top">
       <div class="big-lens"><div class="glow"></div></div>
-      <div class="leds"><span class="led red"></span><span class="led yellow"></span><span class="led green" id="statusLed"></span></div>
+      <div class="leds" aria-hidden="true"><span class="led red"></span><span class="led yellow"></span><span class="led green" id="statusLed"></span></div>
       <h1>POKÉDEX</h1>
-      <nav class="tabs">
-        <button class="tab active" data-view="scanner">📷 Scanner</button>
-        <button class="tab" data-view="browse">📖 Pokédex</button>
-        <button class="tab" data-view="battle">⚔️ Batalha</button>
-        <button class="tab" id="btnLock" style="display:none" title="Bloquear Pokédex">🔒</button>
+      <nav class="tabs" aria-label="Seções">
+        <button class="tab active" data-view="scanner" aria-current="page"><svg class="ic" aria-hidden="true"><use href="#i-camera"/></svg>Scanner</button>
+        <button class="tab" data-view="browse"><svg class="ic" aria-hidden="true"><use href="#i-book"/></svg>Pokédex</button>
+        <button class="tab" data-view="battle"><svg class="ic" aria-hidden="true"><use href="#i-duel"/></svg>Duelo</button>
+        <button class="tab" id="btnLock" style="display:none" aria-label="Bloquear Pokédex" title="Bloquear Pokédex"><svg class="ic" aria-hidden="true"><use href="#i-lock"/></svg></button>
       </nav>
     </header>
 
@@ -31,13 +58,14 @@
     <div id="authOverlay" class="auth-overlay" style="display:none">
       <div class="auth-card">
         <div class="big-lens" style="margin: 0 auto 12px;"><div class="glow"></div></div>
-        <h2>🔒 Acesso de Treinador</h2>
-        <p>Esta Pokédex está protegida. Digite o código de acesso para desbloquear o scanner:</p>
+        <h2>Acesso de Treinador</h2>
+        <p>Esta Pokédex está protegida. Digite o código de acesso para desbloquear o scanner.</p>
         <form id="authForm" onsubmit="return false;">
-          <input type="password" id="authPassword" class="form-input" placeholder="Código de acesso..." autocomplete="current-password" required />
+          <label for="authPassword" class="sr-only">Código de acesso</label>
+          <input type="password" id="authPassword" class="form-input" placeholder="Código de acesso" autocomplete="current-password" required />
           <button id="btnAuthSubmit" class="btn shoot" style="width:100%;margin-top:12px">Desbloquear Pokédex</button>
         </form>
-        <div id="authMsg" style="margin-top:10px;font-size:13px;color:#d32f2f;font-weight:600"></div>
+        <div id="authMsg" role="alert" style="margin-top:10px;font-size:13px;color:#b3261e;font-weight:600"></div>
       </div>
     </div>
 
@@ -46,35 +74,35 @@
       <section id="view-scanner" class="view active">
         <div class="panel left">
           <div class="screen-frame">
-            <div class="screen camera">
+            <div class="screen camera" id="cameraScreen">
               <video id="video" autoplay playsinline muted></video>
               <canvas id="canvas" hidden></canvas>
               <img id="preview" alt="" hidden />
               <div class="reticle"><span></span><span></span><span></span><span></span></div>
               <div class="scanline" id="scanline" hidden></div>
-              <div class="cam-msg" id="camMsg">Toque em “Ligar câmera”</div>
-              <div class="auto-badge" id="autoBadge" style="display:none">⚡ AUTO-SCAN ATIVO</div>
+              <div class="cam-msg" id="camMsg">Toque em “Ligar câmera” ou envie uma foto</div>
+              <div class="auto-badge" id="autoBadge" style="display:none">AUTO-SCAN ATIVO</div>
             </div>
           </div>
           <div class="controls">
-            <button id="btnCam" class="btn">🎥 Ligar câmera</button>
-            <button id="btnFlip" class="btn small" title="Trocar câmera" style="display:none">🔄</button>
-            <button id="btnShot" class="btn shoot" disabled>⚡ Capturar</button>
-            <label class="btn">🖼️ Enviar foto<input id="file" type="file" accept="image/*" hidden /></label>
+            <button id="btnCam" class="btn"><svg class="ic" aria-hidden="true"><use href="#i-video"/></svg><span class="lbl">Ligar câmera</span></button>
+            <button id="btnFlip" class="btn" aria-label="Trocar câmera" title="Trocar câmera" style="display:none"><svg class="ic" aria-hidden="true"><use href="#i-swap"/></svg></button>
+            <button id="btnShot" class="btn shoot" disabled><svg class="ic" aria-hidden="true"><use href="#i-bolt"/></svg>Capturar</button>
+            <label class="btn" tabindex="0" id="fileLabel"><svg class="ic" aria-hidden="true"><use href="#i-image"/></svg>Enviar foto<input id="file" type="file" accept="image/*" hidden /></label>
           </div>
           <div class="auto-toggle-container">
-            <label class="auto-switch">
+            <span class="auto-switch">
               <input type="checkbox" id="autoScan" />
               <span class="slider"></span>
-            </label>
-            <span class="auto-label">Escanear automaticamente em tempo real</span>
+            </span>
+            <label class="auto-label" for="autoScan">Escanear automaticamente em tempo real</label>
           </div>
           <div id="candidates" class="candidates"></div>
         </div>
 
         <div class="panel right">
           <div class="screen-frame">
-            <div class="screen info" id="result">
+            <div class="screen info" id="result" aria-live="polite">
               <div class="placeholder">
                 <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png" alt="" />
                 <p>Aponte a câmera para um Pokémon (desenho, carta, brinquedo ou tela) e toque em <b>Capturar</b>.</p>
@@ -87,388 +115,221 @@
       <!-- ===== Navegar ===== -->
       <section id="view-browse" class="view">
         <div class="browse-bar">
-          <input id="search" type="search" placeholder="Buscar por nome, número ou tipo..." />
-          <select id="typeFilter"><option value="">Todos os tipos</option></select>
+          <input id="search" type="search" placeholder="Buscar por nome, número ou tipo" aria-label="Buscar Pokémon" />
+          <select id="typeFilter" aria-label="Filtrar por tipo"><option value="">Todos os tipos</option></select>
         </div>
+        <p id="gridCount" class="grid-count" aria-live="polite"></p>
         <div id="grid" class="grid"></div>
       </section>
 
-      <!-- ===== Batalha Pokémon Online ===== -->
+      <!-- ===== Duelo dos Encantados (jogo original) ===== -->
       <section id="view-battle" class="view">
-        <div class="battle-container">
-          
-          <!-- 1. Tela de Login / Cadastro do Treinador -->
-          <div id="battleAuth" class="battle-auth-card" style="display:none">
-            <div class="big-lens" style="margin: 0 auto 10px;"><div class="glow"></div></div>
-            <h2>⚔️ Liga Pokémon Online</h2>
-            <p>Cadastre seu nome de usuário e senha pessoal para desafiar outros treinadores e subir no ranking!</p>
-            
-            <div class="auth-tabs">
-              <button id="tabLogin" class="auth-tab active">Entrar</button>
-              <button id="tabRegister" class="auth-tab">Novo Treinador</button>
+        <div class="duel" id="duel">
+
+          <!-- 1. Entrar / criar conta -->
+          <div id="duelAuth" class="duel-panel duel-auth" hidden>
+            <h2>Duelo dos Encantados</h2>
+            <p class="duel-lead">Monte um trio de criaturas dos cinco elementos e vença rodada a rodada: Golpe, Técnica, Guarda ou Troca.</p>
+            <div class="seg" role="tablist">
+              <button class="seg-btn active" id="tabLogin" role="tab" aria-selected="true">Entrar</button>
+              <button class="seg-btn" id="tabRegister" role="tab" aria-selected="false">Criar conta</button>
             </div>
-
-            <!-- Login -->
-            <form id="formLogin">
-              <div class="form-group">
-                <label>Nome de Usuário:</label>
-                <input type="text" id="loginUsername" class="form-input" placeholder="Seu usuário..." required autocomplete="username" />
+            <form id="duelAuthForm" onsubmit="return false;">
+              <div class="form-group"><label for="duelUser">Usuário</label>
+                <input id="duelUser" class="form-input" autocomplete="username" minlength="3" maxlength="24" required /></div>
+              <div class="form-group"><label for="duelPass">Senha</label>
+                <input id="duelPass" class="form-input" type="password" autocomplete="current-password" minlength="4" required /></div>
+              <div id="registerOnly" hidden>
+                <div class="form-group"><label for="duelDisplay">Nome de treinador (opcional)</label>
+                  <input id="duelDisplay" class="form-input" maxlength="24" /></div>
+                <div class="form-group"><span class="label" id="avatarLabel">Seu Encantado de perfil</span>
+                  <div id="avatarPicker" class="avatar-picker" role="radiogroup" aria-labelledby="avatarLabel"></div></div>
               </div>
-              <div class="form-group">
-                <label>Senha Pessoal:</label>
-                <input type="password" id="loginPassword" class="form-input" placeholder="Sua senha..." required autocomplete="current-password" />
-              </div>
-              <button type="submit" class="btn shoot" style="width:100%;margin-top:10px">Entrar na Arena</button>
+              <button id="btnDuelAuth" class="btn shoot" style="width:100%">Entrar</button>
+              <p id="duelAuthMsg" class="form-msg" role="alert"></p>
             </form>
-
-            <!-- Cadastro -->
-            <form id="formRegister" style="display:none">
-              <div class="form-group">
-                <label>Nome de Usuário (Único): *</label>
-                <input type="text" id="regUsername" class="form-input" placeholder="Ex: red, ash_ketchum, mistyleader" required autocomplete="username" />
-              </div>
-              <div class="form-group">
-                <label>Nome de Exibição / Apelido:</label>
-                <input type="text" id="regDisplayName" class="form-input" placeholder="Ex: Mestre Ash, Gary..." />
-              </div>
-              <div class="form-group">
-                <label>Senha Pessoal: *</label>
-                <input type="password" id="regPassword" class="form-input" placeholder="Mínimo 4 caracteres..." required autocomplete="new-password" />
-              </div>
-              <div class="form-group">
-                <label>Escolha seu Avatar de Treinador:</label>
-                <div class="avatar-picker">
-                  <div class="avatar-opt selected" data-avatar="25"><img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png" alt="Pikachu" /></div>
-                  <div class="avatar-opt" data-avatar="6"><img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/6.png" alt="Charizard" /></div>
-                  <div class="avatar-opt" data-avatar="9"><img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/9.png" alt="Blastoise" /></div>
-                  <div class="avatar-opt" data-avatar="3"><img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/3.png" alt="Venusaur" /></div>
-                  <div class="avatar-opt" data-avatar="94"><img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/94.png" alt="Gengar" /></div>
-                  <div class="avatar-opt" data-avatar="448"><img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/448.png" alt="Lucario" /></div>
-                </div>
-                <input type="hidden" id="regAvatarInput" value="25" />
-              </div>
-              <button type="submit" class="btn shoot" style="width:100%;margin-top:10px">Cadastrar e Jogar</button>
-            </form>
-
-            <div id="authStatusMsg" style="margin-top:10px;font-size:13px;font-weight:700;color:#d32f2f"></div>
           </div>
 
-          <!-- 2. Lobby do Salão de Batalha -->
-          <div id="battleLobby" style="display:none">
+          <!-- 2. Salão -->
+          <div id="duelLobby" hidden>
+            <div class="duel-panel lobby-head">
+              <span id="meAvatar" class="avatar lg"></span>
+              <div class="me-info"><b id="meName"></b><span id="meStats"></span></div>
+              <button id="btnBot" class="btn shoot"><svg class="ic" aria-hidden="true"><use href="#i-duel"/></svg>Treinar contra a IA</button>
+              <button id="btnLogout" class="btn ghost" aria-label="Sair da conta" title="Sair da conta"><svg class="ic" aria-hidden="true"><use href="#i-logout"/></svg></button>
+            </div>
             <div class="lobby-grid">
-              
-              <!-- Coluna da Esquerda: Perfil e Ações Rápidas -->
-              <div>
-                <div class="trainer-card">
-                  <div class="trainer-avatar">
-                    <img id="trainerAvatar" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png" alt="" />
-                  </div>
-                  <div class="trainer-info">
-                    <h3 id="trainerName">Treinador</h3>
-                    <div id="trainerUsername" style="font-size:12px;color:#666;margin-bottom:4px">@usuario</div>
-                    <span id="trainerRating" class="trainer-rating">🏆 1000 PTS</span>
-                    <div class="trainer-stats">
-                      <span id="trainerWins" style="color:#2e7d32;font-weight:700">0 V</span>
-                      <span>•</span>
-                      <span id="trainerLosses" style="color:#c62828;font-weight:700">0 D</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="quick-match-box">
-                  <button id="btnQuickBot" class="btn-bot">🤖 Treinar contra IA / Bot Treinador</button>
-                  <p style="font-size:11px;color:#fff;margin:8px 0 0">Treine agora mesmo contra a inteligência artificial para testar sua estratégia!</p>
-                </div>
-
-                <div class="quick-match-box" style="text-align:left">
-                  <div style="font-weight:800;font-size:13px;color:#fff">Desafiar Treinador por Nome/ID:</div>
-                  <div class="challenge-input-box">
-                    <input type="text" id="challengeDirectInput" placeholder="Ex: ash_ketchum, mistyleader..." />
-                    <button id="btnChallengeDirect" class="btn-challenge" style="padding:10px 14px">Convidar</button>
-                  </div>
-                </div>
-
-                <button id="btnLogoutTrainer" class="btn" style="width:100%;background:#37474f">🚪 Sair da Conta</button>
+              <div class="duel-panel">
+                <h3>Treinadores</h3>
+                <form id="challengeForm" class="inline-form" onsubmit="return false;">
+                  <label for="challengeUser" class="sr-only">Usuário do treinador</label>
+                  <input id="challengeUser" class="form-input" placeholder="Desafiar por nome de usuário" maxlength="24" />
+                  <button class="btn" id="btnChallenge">Desafiar</button>
+                </form>
+                <ul id="trainerList" class="rows"></ul>
               </div>
-
-              <!-- Coluna da Direita: Treinadores Online e Ranking -->
-              <div>
-                <div class="online-list">
-                  <h4>
-                    <span>👥 Treinadores Cadastrados na Liga</span>
-                    <span style="font-size:11px;color:#666" id="trainersCountLabel">Clique para desafiar</span>
-                  </h4>
-                  <div id="onlineTrainersList">
-                    <div style="text-align:center;color:#666;font-size:13px;padding:12px">Carregando treinadores...</div>
-                  </div>
-                </div>
-
-                <div class="leaderboard-list">
-                  <h4>
-                    <span>🏆 Ranking da Liga Pokémon (Top Treinadores)</span>
-                    <span style="font-size:11px;color:#666">Pontuação ELO</span>
-                  </h4>
-                  <div id="leaderboardRows">
-                    <div style="text-align:center;color:#666;font-size:13px;padding:12px">Carregando ranking...</div>
-                  </div>
-                </div>
+              <div class="duel-panel">
+                <h3>Ranking</h3>
+                <ol id="rankList" class="rows rank"></ol>
               </div>
-
+              <div class="duel-panel">
+                <h3>Seus últimos duelos</h3>
+                <ul id="historyList" class="rows"></ul>
+              </div>
             </div>
+            <details class="duel-panel rules">
+              <summary>Como jogar</summary>
+              <div id="rulesBody"></div>
+            </details>
           </div>
 
-          <!-- 3. Sala de Escolha (Draft Room - 60 Segundos) -->
-          <div id="battleDraft" style="display:none">
-            <div class="draft-card">
-              
-              <div class="draft-header">
-                <div>
-                  <h3 style="margin:0 0 4px">⚔️ Escolha seus 3 Pokémon de Combate</h3>
-                  <div style="font-size:13px;color:#222;font-weight:700;margin-bottom:2px">
-                    Oponente: <span id="draftOpponentName" style="color:var(--red)">Oponente</span>
-                  </div>
-                  <div id="draftOpponentStatus" style="font-size:12px;color:#444;font-weight:700">⏳ Oponente escolhendo...</div>
-                </div>
-
-                <div id="draftTimerBox" class="draft-timer-box">
-                  <span>⏱️</span>
-                  <span id="draftTimerVal">60s</span>
-                </div>
-
-                <div class="stamina-meter">
-                  <div class="stamina-label">
-                    <span>⚡ Stamina da Equipe:</span>
-                    <span id="teamStaminaVal">0 / 1550 SP</span>
-                  </div>
-                  <div class="stamina-bar-bg">
-                    <div id="teamStaminaFill" class="stamina-bar-fill" style="width:0%"></div>
-                  </div>
-                </div>
+          <!-- 3. Draft -->
+          <div id="duelDraft" hidden>
+            <div class="duel-panel draft-head">
+              <div class="timer" id="draftTimer" role="timer" aria-label="Tempo de escolha"><b>60</b></div>
+              <div class="draft-status">
+                <b>Monte seu trio</b>
+                <span id="draftOpp"></span>
+                <div class="budget" aria-live="polite"><div class="budget-bar"><i id="budgetFill"></i></div><span id="budgetText"></span></div>
               </div>
-
-              <!-- Slots Selecionados -->
-              <div class="team-slots">
-                <div id="teamSlot1" class="team-slot"></div>
-                <div id="teamSlot2" class="team-slot"></div>
-                <div id="teamSlot3" class="team-slot"></div>
-              </div>
-
-              <!-- Busca e Lista de 1.025 Pokémon com Stamina -->
-              <div class="draft-search-bar">
-                <input id="draftSearch" type="search" placeholder="🔍 Filtrar Pokémon por nome ou número..." />
-                <select id="draftTypeFilter">
-                  <option value="">Todos os tipos</option>
-                  <option value="water">Água</option>
-                  <option value="fire">Fogo</option>
-                  <option value="grass">Planta</option>
-                  <option value="electric">Elétrico</option>
-                  <option value="psychic">Psíquico</option>
-                  <option value="ice">Gelo</option>
-                  <option value="dragon">Dragão</option>
-                  <option value="fighting">Lutador</option>
-                  <option value="ground">Terra</option>
-                  <option value="rock">Pedra</option>
-                  <option value="ghost">Fantasma</option>
-                  <option value="steel">Aço</option>
-                  <option value="fairy">Fada</option>
-                </select>
-              </div>
-
-              <div id="draftPokeGrid" class="draft-poke-grid"></div>
-
-              <div class="draft-footer">
-                <div style="font-size:12px;color:#555">
-                  💡 <b>Regra:</b> O limite total de Stamina é de <b>1.550 SP</b> para balancear Pokémon leves e fortes. Se o tempo de 60s acabar, o sistema completa sua equipe no automático!
-                </div>
-                <button id="btnLockTeam" class="btn-lock-team" disabled>🔒 Confirmar Equipe (0/3)</button>
-              </div>
-
+              <button id="btnLockTeam" class="btn shoot" disabled><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span>Confirmar trio</span></button>
             </div>
+            <div id="draftSlots" class="draft-slots"></div>
+            <div id="elementChips" class="chips" role="group" aria-label="Filtrar por elemento"></div>
+            <div id="rosterGrid" class="roster"></div>
           </div>
 
-          <!-- 4. Arena de Batalha (Estilo Pokémon GO) -->
-          <div id="battleArena" style="display:none">
-            <div class="battle-arena-wrapper">
-              
-              <!-- Estádio 3D / Isométrico -->
-              <div class="battle-stage">
-                <div class="stadium-ring"></div>
-                <div class="stadium-line"></div>
-
-                <!-- HUD Oponente -->
-                <div class="hud-opponent">
-                  <div class="hud-name-row">
-                    <span id="oppHudName">Oponente</span>
-                    <span id="oppShields" class="hud-shields">🛡️ 🛡️</span>
-                  </div>
-                  <div class="hp-bar-bg">
-                    <div id="oppHpFill" class="hp-bar-fill" style="width:100%"></div>
-                  </div>
-                  <div id="oppHpText" class="hp-text">100%</div>
-                </div>
-
-                <!-- Pokémon do Oponente (No Fundo) -->
-                <div id="oppPokeStage" class="poke-opponent-stage">
-                  <img id="oppSprite" src="" alt="" />
-                  <div class="poke-shadow"></div>
-                </div>
-
-                <!-- Pokémon do Jogador (No Primeiro Plano) -->
-                <div id="myPokeStage" class="poke-player-stage">
-                  <img id="mySprite" src="" alt="" />
-                  <div class="poke-shadow" style="width:120px;height:28px"></div>
-                </div>
-
-                <!-- HUD Jogador -->
-                <div class="hud-player">
-                  <div class="hud-name-row">
-                    <span id="myHudName">Você</span>
-                    <span id="myShields" class="hud-shields">🛡️ 🛡️</span>
-                  </div>
-                  <div class="hp-bar-bg">
-                    <div id="myHpFill" class="hp-bar-fill" style="width:100%"></div>
-                  </div>
-                  <div id="myHpText" class="hp-text">200 / 200 HP</div>
-                  <div class="energy-bar-bg">
-                    <div id="myEnergyFill" class="energy-bar-fill" style="width:0%"></div>
-                  </div>
-                </div>
+          <!-- 4. Arena -->
+          <div id="duelArena" hidden>
+            <div class="stage" id="stage">
+              <div id="stage3d" class="stage-canvas"></div>
+              <div class="plate foe" id="plateFoe"></div>
+              <div class="plate me" id="plateMe"></div>
+              <div class="round-chip" id="roundChip"></div>
+              <div class="announcer" id="announcer" aria-live="assertive"></div>
+              <div class="floats" id="floats" aria-hidden="true"></div>
+            </div>
+            <div class="duel-panel controls-panel">
+              <div class="turn-bar" id="turnBar"><i></i></div>
+              <p class="turn-hint" id="turnHint" aria-live="polite"></p>
+              <div class="actions" id="actions">
+                <button class="act" data-kind="golpe"><svg class="ic" aria-hidden="true"><use href="#i-duel"/></svg><b>Golpe</b><small>+1 Foco</small></button>
+                <button class="act tech" data-kind="tecnica"><svg class="ic" aria-hidden="true"><use href="#i-spark"/></svg><b id="techName">Técnica</b><small id="techInfo">3 de Foco</small></button>
+                <button class="act" data-kind="guarda"><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg><b>Guarda</b><small>Amortece, +2 Foco</small></button>
               </div>
-
-              <!-- Alerta de Escudo (Quando o adversário desfere golpe carregado) -->
-              <div id="shieldAlertOverlay" class="shield-alert-overlay" style="display:none">
-                <div class="shield-alert-box">
-                  <h3>⚠️ ATAQUE CARREGADO INCOMING!</h3>
-                  <p>O adversário disparou <b id="shieldMoveName">Ataque</b>!</p>
-                  <div style="font-size:24px;font-weight:900;color:#0091ea" id="shieldCountdown">3s</div>
-                  <button id="btnUseShield" class="btn-activate-shield">🛡️ ATIVAR ESCUDO!</button>
-                </div>
+              <div class="bench" id="bench" aria-label="Trocar de Encantado"></div>
+              <div class="arena-foot">
+                <ol class="ticker" id="ticker" aria-label="Narração"></ol>
+                <button class="btn ghost small" id="btnSurrender"><svg class="ic" aria-hidden="true"><use href="#i-flag"/></svg>Desistir</button>
               </div>
-
-              <!-- Controles de Ação de Combate -->
-              <div class="battle-controls">
-                <div class="battle-buttons-grid">
-                  <button id="btnFastAtk" class="btn-fast-atk">⚡ Ataque Rápido</button>
-                  <button id="btnCharged1" class="btn-charged-atk" disabled>💥 Carregado 1</button>
-                  <button id="btnCharged2" class="btn-charged-atk" disabled>✨ Carregado 2</button>
-                </div>
-
-                <!-- Banco de Reserva (Troca de Pokémon) -->
-                <div class="bench-bar">
-                  <span class="bench-label">🔄 Trocar Pokémon:</span>
-                  <div id="benchList" class="bench-list"></div>
-                  <button id="btnSurrender" class="btn small" style="background:#b71c1c;padding:6px 10px;font-size:11px">Render-se</button>
-                </div>
-
-                <!-- Feed de Logs de Combate -->
-                <div id="battleTicker" class="battle-ticker">
-                  <div>⚔️ Arena pronta para combate!</div>
-                </div>
-              </div>
-
             </div>
           </div>
-
         </div>
       </section>
     </main>
   </div>
 
-  <!-- ===== Modal de Desafio Recebido ===== -->
-  <dialog id="challengeModal">
-    <div class="teach-box" style="text-align:center">
-      <img id="challengeAvatar" src="" style="width:68px;height:68px;border-radius:50%;border:3px solid var(--red);background:#fff;margin:0 auto 10px;" alt="" />
-      <h3>⚔️ DESAFIO DE BATALHA!</h3>
-      <p><b id="challengeChallengerName">Treinador</b> (<span id="challengeChallengerRating">1000 PTS</span>) convidou você para uma batalha Pokémon online!</p>
-      <div style="font-size:20px;font-weight:900;color:#d32f2f;margin-bottom:14px" id="challengeTimer">30s</div>
-      <div style="display:flex;gap:10px">
-        <button id="btnAcceptChallenge" class="btn shoot" style="flex:1">Aceitar Batalha!</button>
-        <button id="btnDeclineChallenge" class="btn" style="flex:1;background:#555">Recusar</button>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <!-- ===== Diálogos do Duelo ===== -->
+  <dialog id="duelResult" class="duel-dialog">
+    <div class="duel-dialog-body">
+      <div id="resultArt" class="result-art"></div>
+      <h2 id="resultTitle"></h2>
+      <p id="resultMsg"></p>
+      <button id="btnBackToLobby" class="btn shoot" style="width:100%">Voltar ao salão</button>
+    </div>
+  </dialog>
+  <dialog id="duelInvite" class="duel-dialog">
+    <div class="duel-dialog-body">
+      <span id="inviteAvatar" class="avatar lg"></span>
+      <h2 id="inviteTitle"></h2>
+      <p id="inviteMsg"></p>
+      <div class="invite-bar"><i id="inviteBar"></i></div>
+      <div class="dialog-actions">
+        <button id="btnInviteAccept" class="btn shoot">Aceitar</button>
+        <button id="btnInviteDecline" class="btn ghost">Recusar</button>
+      </div>
+    </div>
+  </dialog>
+  <dialog id="duelOffline" class="duel-dialog">
+    <div class="duel-dialog-body">
+      <span id="offlineAvatar" class="avatar lg"></span>
+      <h2 id="offlineTitle"></h2>
+      <p>Este treinador não está conectado. Você pode enfrentar o eco dele, controlado pela IA.</p>
+      <div class="dialog-actions">
+        <button id="btnOfflineGo" class="btn shoot">Enfrentar o eco</button>
+        <button id="btnOfflineCancel" class="btn ghost">Cancelar</button>
+      </div>
+    </div>
+  </dialog>
+  <dialog id="duelConfirm" class="duel-dialog">
+    <div class="duel-dialog-body">
+      <h2>Desistir do duelo?</h2>
+      <p>A vitória vai para o oponente.</p>
+      <div class="dialog-actions">
+        <button id="btnConfirmYes" class="btn danger">Desistir</button>
+        <button id="btnConfirmNo" class="btn ghost">Continuar duelando</button>
       </div>
     </div>
   </dialog>
 
-  <!-- ===== Modal de Resultado da Batalha ===== -->
-  <dialog id="battleResultModal">
-    <div class="teach-box" style="text-align:center">
-      <h2 id="battleResultTitle" style="font-size:28px;margin:6px 0">🏆 VITÓRIA!</h2>
-      <p id="battleResultMsg" style="font-size:15px;line-height:1.5;margin-bottom:18px"></p>
-      <button id="btnBackToLobby" class="btn shoot" style="width:100%;font-size:16px">Voltar ao Salão de Batalha</button>
-    </div>
-  </dialog>
-    </main>
-  </div>
-
   <!-- ===== Modal de detalhes ===== -->
   <dialog id="modal">
-    <button class="close" id="modalClose">✕</button>
+    <button class="close" id="modalClose" aria-label="Fechar"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button>
     <div id="modalBody" class="screen info"></div>
   </dialog>
 
   <!-- ===== Modal de correção / ensinar ===== -->
   <dialog id="teachModal">
-    <button class="close" id="teachClose">✕</button>
+    <button class="close" id="teachClose" aria-label="Fechar"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button>
     <div class="teach-box">
-      <h3>🎯 Ensinar Pokédex</h3>
+      <h3>Ensinar a Pokédex</h3>
       <div class="teach-tabs">
-        <button id="tabTeachExisting" class="teach-tab active">Existente</button>
-        <button id="tabTeachNew" class="teach-tab">➕ Cadastrar Novo</button>
+        <button id="tabTeachExisting" class="teach-tab active">Já existe</button>
+        <button id="tabTeachNew" class="teach-tab">Cadastrar novo</button>
       </div>
 
-      <!-- Modo 1: Escolher existente -->
       <div id="sectionTeachExisting">
-        <p>Selecione o Pokémon correto correspondente a esta imagem:</p>
+        <label for="teachSelect">Qual é o Pokémon desta imagem?</label>
         <select id="teachSelect" class="teach-select"></select>
-        <button id="btnTeachSubmit" class="btn shoot" style="margin-top:14px;width:100%">Confirmar e Aprender</button>
+        <button id="btnTeachSubmit" class="btn shoot" style="margin-top:14px;width:100%">Confirmar e aprender</button>
       </div>
 
-      <!-- Modo 2: Cadastrar novo -->
       <form id="sectionTeachNew" style="display:none" onsubmit="return false;">
-        <p>Preencha os dados básicos do novo Pokémon para registrá-lo:</p>
+        <p>Preencha os dados básicos do novo Pokémon para registrá-lo.</p>
         <div class="form-group">
-          <label>Nome do Pokémon: *</label>
-          <input type="text" id="newPokeName" class="form-input" placeholder="Ex: Lucario, Bulbasaur Especial..." required />
+          <label for="newPokeName">Nome do Pokémon *</label>
+          <input type="text" id="newPokeName" class="form-input" placeholder="Ex.: Lucario" required />
         </div>
         <div class="form-row">
           <div class="form-group" style="flex:1">
-            <label>Tipo 1 (Classe): *</label>
+            <label for="newPokeType1">Tipo 1 *</label>
             <select id="newPokeType1" class="form-input" required></select>
           </div>
           <div class="form-group" style="flex:1">
-            <label>Tipo 2 (Opcional):</label>
+            <label for="newPokeType2">Tipo 2 (opcional)</label>
             <select id="newPokeType2" class="form-input"><option value="">Nenhum</option></select>
           </div>
         </div>
         <div class="form-group">
-          <label>Espécie / Categoria:</label>
-          <input type="text" id="newPokeGenus" class="form-input" placeholder="Ex: Pokémon Aura, Seed Pokémon..." />
+          <label for="newPokeGenus">Espécie / categoria</label>
+          <input type="text" id="newPokeGenus" class="form-input" placeholder="Ex.: Pokémon Aura" />
         </div>
         <div class="form-group">
-          <label>Descrição:</label>
-          <textarea id="newPokeDesc" class="form-input" rows="2" placeholder="Características marcantes, habitat, etc."></textarea>
+          <label for="newPokeDesc">Descrição</label>
+          <textarea id="newPokeDesc" class="form-input" rows="2" placeholder="Características marcantes, habitat etc."></textarea>
         </div>
-        <button id="btnCreatePokeSubmit" class="btn shoot" style="margin-top:10px;width:100%">Salvar Novo Pokémon</button>
+        <button id="btnCreatePokeSubmit" class="btn shoot" style="margin-top:10px;width:100%">Salvar novo Pokémon</button>
       </form>
 
-      <div id="teachStatus" style="margin-top:10px;font-size:13px;text-align:center;font-weight:600"></div>
-    </div>
-  </dialog>
-
-  <!-- ===== Modal de Treinador Offline (Opção IA) ===== -->
-  <dialog id="offlineTrainerModal">
-    <div class="teach-box" style="text-align:center">
-      <img id="offlineTrainerAvatar" src="" style="width:64px;height:64px;border-radius:50%;border:3px solid #666;background:#fff;margin:0 auto 10px;" alt="" />
-      <h3 id="offlineTrainerTitle">Treinador Offline</h3>
-      <p id="offlineTrainerMsg">Este treinador está desconectado no momento. Deseja batalhar contra a equipe dele guiada por IA?</p>
-      <div style="display:flex;gap:10px;margin-top:14px">
-        <button id="btnChallengeOfflineBot" class="btn shoot" style="flex:1">🤖 Batalhar vs IA</button>
-        <button id="btnCancelOfflineModal" class="btn" style="flex:1;background:#555">Cancelar</button>
-      </div>
+      <div id="teachStatus" role="status" style="margin-top:10px;font-size:13px;text-align:center;font-weight:600"></div>
     </div>
   </dialog>
 
   <script src="app.js"></script>
-  <script src="battle.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" defer></script>
+  <script src="battle3d.js" defer></script>
+  <script src="battle.js" defer></script>
 </body>
 </html>
-

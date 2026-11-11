@@ -25,7 +25,6 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image
 
 from app.recognizer import Recognizer
-from app.battle_engine import calculate_pokemon_stamina
 from app.battle_server import router as battle_router, websocket_battle_endpoint
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -151,7 +150,6 @@ def list_pokemon():
         "name": p["name"],
         "types": p["types"],
         "types_pt": p["types_pt"],
-        "stamina_cost": calculate_pokemon_stamina(p),
         "sprite": format_pokemon(p)["sprite"],
         "image": format_pokemon(p)["image"],
     } for p in POKEMON]

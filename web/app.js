@@ -14,6 +14,8 @@ const HABITAT_PT = {
   "rough-terrain": "Terreno acidentado", sea: "Mar", urban: "Urbano", "waters-edge": "Beira d'água",
 };
 
+const STAT_BAR_MAX = 180;
+const SEARCH_DEBOUNCE_MS = 120;
 let ALL = [];
 const cache = new Map();
 let stream = null;
@@ -59,6 +61,7 @@ function hideAuthOverlay() {
 /* ---------------- utilidades ---------------- */
 const pad = (n) => String(n).padStart(3, "0");
 const typeBadge = (t) => `<span class="type t-${t}">${TYPE_PT[t] || t}</span>`;
+const icon = (n) => `<svg class="ic" aria-hidden="true"><use href="#i-${n}"/></svg>`;
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 async function getPokemon(id) {
@@ -69,28 +72,30 @@ function setBusy(on) {
   busy = on;
   $("#statusLed").classList.toggle("busy", on);
   $("#scanline").hidden = !on;
+  $("#cameraScreen").classList.toggle("scanning", on);
+  $("#result").classList.toggle("loading", on);
 }
 
 /* ---------------- render de detalhes ---------------- */
 function renderDetail(p, confidence = null) {
   const confHtml = confidence == null ? "" :
     `<span class="conf ${confidence < 0.5 ? "low" : ""}">${(confidence * 100).toFixed(1)}%</span>`;
-  const teachBtn = confidence != null ? `<button class="btn-teach" id="btnTeachOpen">🎯 Não é esse? Ensinar Pokédex</button>` : "";
+  const teachBtn = confidence != null ? `<button class="btn-teach" id="btnTeachOpen">${icon("target")}Não é esse? Ensinar a Pokédex</button>` : "";
   const warn = confidence != null && confidence < 0.4
-    ? `<p class="desc" style="border-color:#ffb300">⚠️ Não tenho muita certeza. Tente aproximar, centralizar o Pokémon na mira e melhorar a iluminação. ${teachBtn}</p>`
+    ? `<p class="desc warn">Não tenho muita certeza. Tente aproximar, centralizar o Pokémon na mira e melhorar a iluminação. ${teachBtn}</p>`
     : (confidence != null ? `<div style="margin:4px 0">${teachBtn}</div>` : "");
-  const stats = STAT_LABELS.map(([k, label, color]) => `
+  const stats = STAT_LABELS.map(([k, label, color], i) => `
     <div class="stat"><span>${label}</span><b>${p.stats[k]}</b>
-      <div class="bar"><i style="width:${Math.min(100, (p.stats[k] / 180) * 100)}%;background:${color}"></i></div></div>`).join("");
+      <div class="bar"><i style="--i:${i};width:${Math.min(100, (p.stats[k] / STAT_BAR_MAX) * 100)}%;background:${color}"></i></div></div>`).join("");
   const abilities = p.abilities.map((a) =>
     `<div class="abil"><b>${esc(a.name)}</b>${a.hidden ? " <small>(oculta)</small>" : ""}<br><small>${esc(a.description)}</small></div>`).join("");
   const evo = p.evolution.length > 1 ? p.evolution.map((stage) => `
       <div class="stage">${stage.map((id) => {
         const e = ALL.find((x) => x.id === id);
         return `<button data-id="${id}" class="${id === p.id ? "cur" : ""}"><img src="${e?.sprite || POKE_SPRITE_URL(id)}" alt="" onerror="this.onerror=null;this.src='${POKE_SPRITE_URL(id)}'"><span>${esc(e?.name || id)}</span></button>`;
-      }).join("")}</div>`).join('<span class="arrow">➜</span>') : "<small>Este Pokémon não possui evolução nesta geração.</small>";
+      }).join("")}</div>`).join(`<span class="arrow">${icon("arrow")}</span>`) : "<small>Este Pokémon não possui evolução nesta geração.</small>";
 
-  return `
+  return `<div class="dex t-${p.types[0]}">
     <div class="dex-head">
       <span class="dex-num">#${pad(p.id)}</span><h2>${esc(p.name)}</h2>
       <span class="genus">${esc(p.genus)}</span>${confHtml}
@@ -102,8 +107,8 @@ function renderDetail(p, confidence = null) {
           <img class="main" src="${p.image}" alt="${esc(p.name)}" onerror="this.onerror=null;this.src='${POKE_ART_URL(p.id)}'">
           ${p.animated ? `<img class="anim" src="${p.animated}" alt="" onerror="this.remove()">` : ""}
         </div>
-        <div class="types">${p.types.map(typeBadge).join("")}${p.is_legendary ? '<span class="type" style="background:#d4af37">Lendário</span>' : ""}${p.is_mythical ? '<span class="type" style="background:#b388ff">Mítico</span>' : ""}</div>
-        <button class="btn small" data-speak>🔊 Ouvir</button>
+        <div class="types">${p.types.map(typeBadge).join("")}${p.is_legendary ? '<span class="type legendary">Lendário</span>' : ""}${p.is_mythical ? '<span class="type mythical">Mítico</span>' : ""}</div>
+        <button class="btn small" data-speak>${icon("speaker")}Ouvir</button>
       </div>
       <div>
         <p class="desc">${esc(p.description)}</p>
@@ -127,15 +132,15 @@ function renderDetail(p, confidence = null) {
     <h3>Habilidades</h3>${abilities}
     <h3>Evolução</h3><div class="evo">${evo}</div>
     ${p.gallery && p.gallery.length ? `
-    <h3>Galeria e Variações 3D (RogerKoala) <small style="font-size:11px;color:#555">(${p.gallery.length} imagens)</small></h3>
+    <h3>Galeria e variações <small>(${p.gallery.length} imagens)</small></h3>
     <div class="gallery-scroll">
       ${p.gallery.map((g) => `
-        <div class="gallery-item" data-src="${g.url}" title="${esc(g.name)}">
-          <img src="${g.url}" alt="" loading="lazy" />
+        <button class="gallery-item" data-src="${esc(g.url)}" aria-label="${esc(g.name)}" title="${esc(g.name)}">
+          <img src="${esc(g.url)}" alt="" loading="lazy" />
           ${g.is_3d ? '<span class="tag-3d">3D</span>' : ""}
-          ${g.is_shiny ? '<span class="tag-shiny">✨</span>' : ""}
-        </div>`).join("")}
-    </div>` : ""}`;
+          ${g.is_shiny ? '<span class="tag-shiny">Shiny</span>' : ""}
+        </button>`).join("")}
+    </div>` : ""}</div>`;
 }
 
 function bindDetail(container, p) {
@@ -209,7 +214,7 @@ async function startCamera() {
     $("#preview").hidden = true;
     $("#camMsg").hidden = true;
     $("#btnShot").disabled = false;
-    $("#btnCam").textContent = "⏹️ Desligar";
+    setCamButton(true);
     try {
       const cams = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput");
       $("#btnFlip").style.display = cams.length > 1 ? "inline-flex" : "none";
@@ -219,11 +224,15 @@ async function startCamera() {
     $("#camMsg").textContent = "Não foi possível acessar a câmera: " + err.message;
   }
 }
+function setCamButton(isOn) {
+  $("#btnCam .lbl").textContent = isOn ? "Desligar" : "Ligar câmera";
+  $("#btnCam use").setAttribute("href", isOn ? "#i-stop" : "#i-video");
+}
 function stopCamera() {
   stream?.getTracks().forEach((t) => t.stop());
   stream = null;
   $("#btnShot").disabled = true;
-  $("#btnCam").textContent = "🎥 Ligar câmera";
+  setCamButton(false);
   $("#btnFlip").style.display = "none";
   if ($("#autoScan").checked) {
     $("#autoScan").checked = false;
@@ -278,7 +287,7 @@ async function classify(blob, previewUrl) {
       navigator.vibrate([40, 50, 40]);
     }
   } catch (err) {
-    $("#result").innerHTML = `<div class="placeholder"><p>❌ Erro: ${esc(err.message)}</p></div>`;
+    $("#result").innerHTML = `<div class="placeholder"><p><b>Não consegui reconhecer a imagem.</b><br>${esc(err.message)}<br>Tente capturar de novo.</p></div>`;
   } finally {
     setBusy(false);
   }
@@ -287,10 +296,10 @@ async function classify(blob, previewUrl) {
 function renderCandidates(results) {
   const el = $("#candidates");
   el.innerHTML = results.map((r, i) => `
-    <div class="cand ${i === 0 ? "sel" : ""}" data-id="${r.pokemon.id}" data-c="${r.confidence}">
+    <button class="cand ${i === 0 ? "sel" : ""}" style="--i:${i}" data-id="${r.pokemon.id}" data-c="${r.confidence}">
       <img src="${r.pokemon.sprite}" alt="" onerror="this.onerror=null;this.src='${POKE_SPRITE_URL(r.pokemon.id)}'"><b>${esc(r.pokemon.name)}</b>
-      <div class="bar"><i style="width:${(r.confidence * 100).toFixed(1)}%"></i></div>
-      <small>${(r.confidence * 100).toFixed(1)}%</small></div>`).join("");
+      <span class="bar"><i style="width:${(r.confidence * 100).toFixed(1)}%"></i></span>
+      <small>${(r.confidence * 100).toFixed(1)}%</small></button>`).join("");
   el.querySelectorAll(".cand").forEach((c) => c.addEventListener("click", () => {
     el.querySelectorAll(".cand").forEach((x) => x.classList.remove("sel"));
     c.classList.add("sel");
@@ -306,28 +315,39 @@ function renderGrid() {
     (!t || p.types.includes(t)) &&
     (!q || p.name.toLowerCase().includes(q) || String(p.id) === q.replace(/^#?0*/, "") ||
       p.types_pt.some((x) => x.toLowerCase().includes(q))));
+  $("#gridCount").textContent = list.length === ALL.length
+    ? `${ALL.length.toLocaleString("pt-BR")} Pokémon`
+    : `${list.length.toLocaleString("pt-BR")} de ${ALL.length.toLocaleString("pt-BR")} Pokémon`;
+  if (!list.length) {
+    $("#grid").innerHTML = `<div class="empty"><b>Nenhum Pokémon encontrado</b>Confira a grafia, busque pelo número ou troque o tipo.<br><button class="btn" id="btnClearSearch">Limpar busca</button></div>`;
+    return;
+  }
   $("#grid").innerHTML = list.map((p) => {
     const spriteUrl = p.sprite || POKE_SPRITE_URL(p.id);
     return `
-    <div class="card" data-id="${p.id}">
-      <div class="n">#${pad(p.id)}</div><img src="${spriteUrl}" alt="" loading="lazy" onerror="this.onerror=null;this.src='${POKE_SPRITE_URL(p.id)}'">
+    <button class="card t-${p.types[0]}" data-id="${p.id}">
+      <div class="n">#${pad(p.id)}</div><img src="${spriteUrl}" alt="" width="84" height="84" loading="lazy" onerror="this.onerror=null;this.src='${POKE_SPRITE_URL(p.id)}'">
       <div class="nm">${esc(p.name)}</div><div class="types">${p.types.map(typeBadge).join("")}</div>
-    </div>`;
+    </button>`;
   }).join("");
 }
 
 /* ---------------- eventos ---------------- */
 document.querySelectorAll(".tab").forEach((tab) => tab.addEventListener("click", () => {
-  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t === tab));
-  document.querySelectorAll(".view").forEach((v) => v.classList.toggle("active", v.id === "view-" + tab.dataset.view));
+  if (!tab.dataset.view) return;
+  switchTab(tab.dataset.view);
   window.location.hash = tab.dataset.view;
 }));
 
 function switchTab(viewName) {
   const tab = document.querySelector(`.tab[data-view="${viewName}"]`);
   if (!tab) return;
-  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t === tab));
+  document.querySelectorAll(".tab").forEach((t) => {
+    t.classList.toggle("active", t === tab);
+    if (t === tab) t.setAttribute("aria-current", "page"); else t.removeAttribute("aria-current");
+  });
   document.querySelectorAll(".view").forEach((v) => v.classList.toggle("active", v.id === "view-" + viewName));
+  document.dispatchEvent(new CustomEvent("viewchange", { detail: viewName }));
 }
 
 if (window.location.hash) {
@@ -365,9 +385,26 @@ $("#autoScan").addEventListener("change", async (e) => {
     badge.style.display = "none";
   }
 });
-$("#search").addEventListener("input", renderGrid);
+let searchTimer = null;
+$("#search").addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(renderGrid, SEARCH_DEBOUNCE_MS);
+});
+$("#fileLabel").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("#file").click(); }
+});
 $("#typeFilter").addEventListener("change", renderGrid);
-$("#grid").addEventListener("click", (e) => { const c = e.target.closest(".card"); if (c) openModal(Number(c.dataset.id)); });
+$("#grid").addEventListener("click", (e) => {
+  if (e.target.closest("#btnClearSearch")) {
+    $("#search").value = "";
+    $("#typeFilter").value = "";
+    renderGrid();
+    $("#search").focus();
+    return;
+  }
+  const c = e.target.closest(".card");
+  if (c) openModal(Number(c.dataset.id));
+});
 $("#modalClose").addEventListener("click", () => $("#modal").close());
 $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") $("#modal").close(); });
 
@@ -404,13 +441,13 @@ $("#btnTeachSubmit")?.addEventListener("click", async () => {
     const r = await authFetch("/api/feedback", { method: "POST", body: fd });
     const j = await readJson(r);
     if (!r.ok) throw new Error(j.detail || "Erro ao salvar");
-    st.textContent = "✔ " + j.message;
+    st.textContent = j.message;
     setTimeout(() => {
       $("#teachModal").close();
       showResult(pid, 1.0);
     }, 900);
   } catch (err) {
-    st.textContent = "❌ " + err.message;
+    st.textContent = "Não deu certo: " + err.message;
   }
 });
 
@@ -450,7 +487,7 @@ $("#btnCreatePokeSubmit")?.addEventListener("click", async () => {
     const j = await readJson(r);
     if (!r.ok) throw new Error(j.detail || "Erro ao registrar");
 
-    st.textContent = "✔ " + j.message;
+    st.textContent = j.message;
     cache.set(j.pokemon.id, j.pokemon);
     ALL.push({
       id: j.pokemon.id,
@@ -470,7 +507,7 @@ $("#btnCreatePokeSubmit")?.addEventListener("click", async () => {
       showResult(j.pokemon.id, 1.0);
     }, 900);
   } catch (err) {
-    st.textContent = "❌ " + err.message;
+    st.textContent = "Não deu certo: " + err.message;
   }
 });
 
@@ -499,7 +536,7 @@ $("#btnAuthSubmit")?.addEventListener("click", async () => {
     $("#authPassword").value = "";
     await loadInitialData();
   } catch (err) {
-    msg.textContent = "❌ " + err.message;
+    msg.textContent = err.message;
   }
 });
 
@@ -540,7 +577,7 @@ async function loadInitialData() {
     }
     await loadInitialData();
   } catch (err) {
-    console.error("Erro na inicialização:", err);
+    $("#result").innerHTML = `<div class="placeholder"><p><b>Não foi possível carregar a Pokédex.</b><br>${esc(err.message)}<br>Verifique se o servidor está rodando e recarregue a página.</p></div>`;
   }
 })();
 

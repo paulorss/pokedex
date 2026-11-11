@@ -1,665 +1,427 @@
 """
-Motor de Batalha Pokémon estilo Pokémon GO.
-Gerencia cálculos de stamina/custo, matriz completa de tipos e vantagens,
-movimentos rápidos e carregados, escudos protetores, trocas e simulação de turnos/IA.
+Motor do "Duelo dos Encantados" — jogo original de duelos por rodadas.
+
+Cada treinador monta um trio de Encantados (criaturas originais de cinco
+elementos) respeitando um orçamento de pontos. A cada rodada os dois escolhem
+uma ação em segredo (Golpe, Técnica, Guarda ou Trocar); o servidor resolve a
+rodada e devolve uma lista de eventos que o cliente anima em sequência.
 """
 from __future__ import annotations
 
-import json
 import random
-from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parent.parent
-DATA = ROOT / "data"
+TEAM_SIZE = 3
+TEAM_BUDGET = 10
+ROUND_SECONDS = 20
+MAX_FOCO = 5
+START_FOCO = 1
+TECH_COST = 3
+STRIKE_POWER = 24
+TECH_SCALE = 1.25
+STRONG_MULT = 1.4
+WEAK_MULT = 0.72
+GUARD_VS_STRIKE = 0.4
+GUARD_VS_TECH = 0.55
+BURN_ROUNDS = 2
+BURN_FRACTION = 0.07
+REGEN_FRACTION = 0.14
+DRAIN_FOCO = 2
 
-# Carrega base de 1.025 Pokémon
-_poke_file = DATA / "pokemon.json"
-if _poke_file.exists():
-    ALL_POKEMON: list[dict[str, Any]] = json.loads(_poke_file.read_text(encoding="utf-8"))
-    POKEMON_MAP: dict[int, dict[str, Any]] = {p["id"]: p for p in ALL_POKEMON}
-else:
-    ALL_POKEMON = []
-    POKEMON_MAP = {}
-
-# Limite de Stamina total para equipe de 3 Pokémon
-TEAM_STAMINA_LIMIT = 1550
-
-# Matriz completa de 18 tipos Pokémon (Multiplicadores de dano do atacante contra o defensor)
-TYPE_CHART: dict[str, dict[str, float]] = {
-    "normal": {"rock": 0.5, "ghost": 0.0, "steel": 0.5},
-    "fire": {"fire": 0.5, "water": 0.5, "grass": 2.0, "ice": 2.0, "bug": 2.0, "rock": 0.5, "dragon": 0.5, "steel": 2.0},
-    "water": {"fire": 2.0, "water": 0.5, "grass": 0.5, "ground": 2.0, "rock": 2.0, "dragon": 0.5},
-    "grass": {"fire": 0.5, "water": 2.0, "grass": 0.5, "poison": 0.5, "ground": 2.0, "flying": 0.5, "bug": 0.5, "rock": 2.0, "dragon": 0.5, "steel": 0.5},
-    "electric": {"water": 2.0, "electric": 0.5, "grass": 0.5, "ground": 0.0, "flying": 2.0, "dragon": 0.5},
-    "ice": {"fire": 0.5, "water": 0.5, "grass": 2.0, "ice": 0.5, "ground": 2.0, "flying": 2.0, "dragon": 2.0, "steel": 0.5},
-    "fighting": {"normal": 2.0, "ice": 2.0, "poison": 0.5, "flying": 0.5, "psychic": 0.5, "bug": 0.5, "rock": 2.0, "ghost": 0.0, "dark": 2.0, "steel": 2.0, "fairy": 0.5},
-    "poison": {"grass": 2.0, "poison": 0.5, "ground": 0.5, "rock": 0.5, "ghost": 0.5, "steel": 0.0, "fairy": 2.0},
-    "ground": {"fire": 2.0, "electric": 2.0, "grass": 0.5, "poison": 2.0, "flying": 0.0, "bug": 0.5, "rock": 2.0, "steel": 2.0},
-    "flying": {"electric": 0.5, "grass": 2.0, "fighting": 2.0, "bug": 2.0, "rock": 0.5, "steel": 0.5},
-    "psychic": {"fighting": 2.0, "poison": 2.0, "psychic": 0.5, "dark": 0.0, "steel": 0.5},
-    "bug": {"fire": 0.5, "grass": 2.0, "fighting": 0.5, "poison": 0.5, "flying": 0.5, "psychic": 2.0, "ghost": 0.5, "dark": 2.0, "steel": 0.5, "fairy": 0.5},
-    "rock": {"fire": 2.0, "ice": 2.0, "fighting": 0.5, "ground": 0.5, "flying": 2.0, "bug": 2.0, "steel": 0.5},
-    "ghost": {"normal": 0.0, "psychic": 2.0, "ghost": 2.0, "dark": 0.5},
-    "dragon": {"dragon": 2.0, "steel": 0.5, "fairy": 0.0},
-    "steel": {"fire": 0.5, "water": 0.5, "electric": 0.5, "ice": 2.0, "rock": 2.0, "steel": 0.5, "fairy": 2.0},
-    "dark": {"fighting": 0.5, "psychic": 2.0, "ghost": 2.0, "dark": 0.5, "fairy": 0.5},
-    "fairy": {"fire": 0.5, "fighting": 2.0, "poison": 0.5, "dragon": 2.0, "dark": 2.0, "steel": 0.5},
+ELEMENTS: dict[str, dict[str, str]] = {
+    "brasa": {"name": "Brasa", "color": "#ff7a3d"},
+    "mata": {"name": "Mata", "color": "#58b368"},
+    "mare": {"name": "Maré", "color": "#3a9bff"},
+    "pedra": {"name": "Pedra", "color": "#c9a66b"},
+    "vento": {"name": "Vento", "color": "#a99bff"},
 }
 
-TYPE_NAMES_PT: dict[str, str] = {
-    "normal": "Normal", "fire": "Fogo", "water": "Água", "grass": "Planta",
-    "electric": "Elétrico", "ice": "Gelo", "fighting": "Lutador", "poison": "Venenoso",
-    "ground": "Terra", "flying": "Voador", "psychic": "Psíquico", "bug": "Inseto",
-    "rock": "Pedra", "ghost": "Fantasma", "dragon": "Dragão", "steel": "Aço",
-    "dark": "Sombrio", "fairy": "Fada",
+# Cada elemento leva vantagem sobre dois e desvantagem contra outros dois.
+STRONG_AGAINST: dict[str, tuple[str, str]] = {
+    "brasa": ("mata", "vento"),
+    "mata": ("mare", "pedra"),
+    "mare": ("brasa", "pedra"),
+    "pedra": ("brasa", "vento"),
+    "vento": ("mare", "mata"),
 }
 
-# Movimentos icônicos para cada tipo (Ataque Rápido + 2 Ataques Carregados)
-MOVES_BY_TYPE: dict[str, dict[str, Any]] = {
-    "fire": {
-        "fast": {"name": "Brasa", "type": "fire", "power": 12, "energy": 14, "icon": "🔥"},
-        "charged_1": {"name": "Lança-Chamas", "type": "fire", "power": 65, "energy": 50, "icon": "🔥"},
-        "charged_2": {"name": "Explosão de Fogo", "type": "fire", "power": 90, "energy": 65, "icon": "💥"},
-    },
-    "water": {
-        "fast": {"name": "Revólver d'Água", "type": "water", "power": 11, "energy": 15, "icon": "💧"},
-        "charged_1": {"name": "Aqua Cauda", "type": "water", "power": 60, "energy": 45, "icon": "🌊"},
-        "charged_2": {"name": "Hidro Bomba", "type": "water", "power": 95, "energy": 65, "icon": "🌊"},
-    },
-    "grass": {
-        "fast": {"name": "Chicote de Vinha", "type": "grass", "power": 11, "energy": 15, "icon": "🍃"},
-        "charged_1": {"name": "Folha Navalha", "type": "grass", "power": 60, "energy": 45, "icon": "🍃"},
-        "charged_2": {"name": "Raio Solar", "type": "grass", "power": 95, "energy": 65, "icon": "☀️"},
-    },
-    "electric": {
-        "fast": {"name": "Choque do Trovão", "type": "electric", "power": 10, "energy": 16, "icon": "⚡"},
-        "charged_1": {"name": "Relâmpago", "type": "electric", "power": 70, "energy": 50, "icon": "⚡"},
-        "charged_2": {"name": "Trovão Selvagem", "type": "electric", "power": 90, "energy": 60, "icon": "🌩️"},
-    },
-    "ice": {
-        "fast": {"name": "Pó de Neve", "type": "ice", "power": 11, "energy": 14, "icon": "❄️"},
-        "charged_1": {"name": "Raio de Gelo", "type": "ice", "power": 70, "energy": 50, "icon": "❄️"},
-        "charged_2": {"name": "Nevasca", "type": "ice", "power": 90, "energy": 65, "icon": "🌨️"},
-    },
-    "fighting": {
-        "fast": {"name": "Golpe Marcial", "type": "fighting", "power": 12, "energy": 14, "icon": "🥊"},
-        "charged_1": {"name": "Soco Dinâmico", "type": "fighting", "power": 70, "energy": 50, "icon": "👊"},
-        "charged_2": {"name": "Combate Próximo", "type": "fighting", "power": 95, "energy": 65, "icon": "💥"},
-    },
-    "poison": {
-        "fast": {"name": "Picada Venenosa", "type": "poison", "power": 10, "energy": 15, "icon": "☠️"},
-        "charged_1": {"name": "Bomba de Lodo", "type": "poison", "power": 65, "energy": 50, "icon": "🟣"},
-        "charged_2": {"name": "Onda Tóxica", "type": "poison", "power": 85, "energy": 60, "icon": "☠️"},
-    },
-    "ground": {
-        "fast": {"name": "Tiro de Lama", "type": "ground", "power": 10, "energy": 16, "icon": "🌍"},
-        "charged_1": {"name": "Poder da Terra", "type": "ground", "power": 68, "energy": 50, "icon": "🌋"},
-        "charged_2": {"name": "Terremoto", "type": "ground", "power": 95, "energy": 65, "icon": "🌍"},
-    },
-    "flying": {
-        "fast": {"name": "Ataque de Asa", "type": "flying", "power": 11, "energy": 14, "icon": "🪶"},
-        "charged_1": {"name": "Golpe Aéreo", "type": "flying", "power": 62, "energy": 45, "icon": "🌪️"},
-        "charged_2": {"name": "Pássaro Bravo", "type": "flying", "power": 92, "energy": 60, "icon": "🦅"},
-    },
-    "psychic": {
-        "fast": {"name": "Confusão", "type": "psychic", "power": 13, "energy": 14, "icon": "🔮"},
-        "charged_1": {"name": "Psíquico", "type": "psychic", "power": 75, "energy": 50, "icon": "🧠"},
-        "charged_2": {"name": "Onda Mental", "type": "psychic", "power": 95, "energy": 65, "icon": "🔮"},
-    },
-    "bug": {
-        "fast": {"name": "Picada", "type": "bug", "power": 10, "energy": 15, "icon": "🐛"},
-        "charged_1": {"name": "Tesoura X", "type": "bug", "power": 60, "energy": 45, "icon": "✂️"},
-        "charged_2": {"name": "Zumbido de Inseto", "type": "bug", "power": 85, "energy": 60, "icon": "🦗"},
-    },
-    "rock": {
-        "fast": {"name": "Lança-Rochas", "type": "rock", "power": 12, "energy": 13, "icon": "🪨"},
-        "charged_1": {"name": "Deslizamento", "type": "rock", "power": 68, "energy": 50, "icon": "🪨"},
-        "charged_2": {"name": "Gume de Pedra", "type": "rock", "power": 90, "energy": 65, "icon": "⛰️"},
-    },
-    "ghost": {
-        "fast": {"name": "Garra Sombria", "type": "ghost", "power": 11, "energy": 15, "icon": "👻"},
-        "charged_1": {"name": "Bola Sombria", "type": "ghost", "power": 75, "energy": 50, "icon": "🔮"},
-        "charged_2": {"name": "Vento Sinistro", "type": "ghost", "power": 88, "energy": 60, "icon": "👻"},
-    },
-    "dragon": {
-        "fast": {"name": "Sopro do Dragão", "type": "dragon", "power": 12, "energy": 14, "icon": "🐉"},
-        "charged_1": {"name": "Garra do Dragão", "type": "dragon", "power": 62, "energy": 45, "icon": "🐲"},
-        "charged_2": {"name": "Meteoro do Dragão", "type": "dragon", "power": 98, "energy": 65, "icon": "☄️"},
-    },
-    "steel": {
-        "fast": {"name": "Garra de Metal", "type": "steel", "power": 11, "energy": 14, "icon": "⚙️"},
-        "charged_1": {"name": "Meteoro de Ferro", "type": "steel", "power": 70, "energy": 50, "icon": "🛡️"},
-        "charged_2": {"name": "Canhão Flash", "type": "steel", "power": 88, "energy": 60, "icon": "✨"},
-    },
-    "dark": {
-        "fast": {"name": "Mordida", "type": "dark", "power": 10, "energy": 14, "icon": "🌑"},
-        "charged_1": {"name": "Jogo Sujo", "type": "dark", "power": 68, "energy": 50, "icon": "🕶️"},
-        "charged_2": {"name": "Pulso Noturno", "type": "dark", "power": 90, "energy": 65, "icon": "🌑"},
-    },
-    "fairy": {
-        "fast": {"name": "Charme", "type": "fairy", "power": 13, "energy": 13, "icon": "🧚"},
-        "charged_1": {"name": "Brilho Mágico", "type": "fairy", "power": 72, "energy": 50, "icon": "✨"},
-        "charged_2": {"name": "Lua Crescente", "type": "fairy", "power": 92, "energy": 65, "icon": "🌙"},
-    },
-    "normal": {
-        "fast": {"name": "Ataque Rápido", "type": "normal", "power": 10, "energy": 15, "icon": "⚪"},
-        "charged_1": {"name": "Pancada Corporal", "type": "normal", "power": 65, "energy": 45, "icon": "💥"},
-        "charged_2": {"name": "Hiper-Raio", "type": "normal", "power": 95, "energy": 65, "icon": "💫"},
-    },
+EFFECT_TEXT = {
+    "queimar": f"Queima o alvo por {BURN_ROUNDS} rodadas",
+    "regenerar": "Recupera parte da própria vida",
+    "drenar": f"Tira {DRAIN_FOCO} de Foco do alvo",
+    "quebra": "Atravessa a Guarda",
+    "impeto": "Age primeiro e devolve 1 de Foco",
 }
 
 
-def calculate_pokemon_stamina(p: dict[str, Any]) -> int:
-    """Calcula o custo de stamina/pontos de um Pokémon com base em seus stats e se é lendário."""
-    stats = p.get("stats") or {}
-    total = stats.get("total")
-    if not total:
-        total = (
-            stats.get("hp", 50)
-            + stats.get("attack", 50)
-            + stats.get("defense", 50)
-            + stats.get("sp_attack", 50)
-            + stats.get("sp_defense", 50)
-            + stats.get("speed", 50)
-        )
-    cost = int(total)
-    if p.get("is_legendary") or p.get("is_mythical") or stats.get("legendary"):
-        cost = int(cost * 1.05)
-    return max(180, min(750, cost))
-
-
-def get_type_multiplier(attack_type: str, defender_types: list[str]) -> float:
-    """Calcula o multiplicador de efetividade elemental (2.0x, 0.5x, 0.0x, 4.0x, etc.)."""
-    attack_type = attack_type.lower()
-    mult = 1.0
-    for d_type in defender_types:
-        d_type = d_type.lower()
-        sub = TYPE_CHART.get(attack_type, {}).get(d_type, 1.0)
-        mult *= sub
-    return round(mult, 2)
-
-
-def build_combatant(poke_id: int) -> dict[str, Any]:
-    """Prepara os atributos de batalha, vida, movimentos e imagens de um Pokémon."""
-    p = POKEMON_MAP.get(poke_id)
-    if not p:
-        # Fallback genérico
-        p = {
-            "id": poke_id,
-            "name": f"Pokémon #{poke_id}",
-            "types": ["normal"],
-            "types_pt": ["Normal"],
-            "stats": {"hp": 60, "attack": 60, "defense": 60, "total": 360},
-        }
-
-    stats = p.get("stats") or {}
-    base_hp = stats.get("hp", 60)
-    base_atk = stats.get("attack", 60)
-    base_def = stats.get("defense", 60)
-
-    # HP escalado para combate dinâmico de 30 a 60 segundos
-    max_hp = int(base_hp * 3.4 + 90)
-    stamina_cost = calculate_pokemon_stamina(p)
-
-    types = p.get("types") or ["normal"]
-    t1 = types[0].lower() if types else "normal"
-    t2 = types[1].lower() if len(types) > 1 else None
-
-    # Movimentos
-    m1 = MOVES_BY_TYPE.get(t1, MOVES_BY_TYPE["normal"])
-    fast_move = dict(m1["fast"])
-    charged_1 = dict(m1["charged_1"])
-
-    if t2 and t2 in MOVES_BY_TYPE:
-        # Segundo ataque carregado com a cobertura do tipo secundário
-        charged_2 = dict(MOVES_BY_TYPE[t2]["charged_1"])
-    else:
-        # Segundo ataque do mesmo tipo com maior potência
-        charged_2 = dict(m1["charged_2"])
-
-    # Sprites e imagens
-    animated = p.get("animated") or f"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/{poke_id}.gif"
-    artwork = f"/img/artwork/{poke_id}.png"
-    sprite = f"/img/sprites/{poke_id}.png"
-
+def _c(cid, name, element, form, hp, atk, df, spd, cost, c1, c2, tech, power, effect, lore):
     return {
-        "id": p["id"],
-        "name": p["name"],
-        "types": types,
-        "types_pt": p.get("types_pt") or [TYPE_NAMES_PT.get(t, t.capitalize()) for t in types],
-        "stamina_cost": stamina_cost,
-        "max_hp": max_hp,
-        "current_hp": max_hp,
-        "energy": 0,
-        "attack": base_atk,
-        "defense": base_def,
-        "fast_move": fast_move,
-        "charged_move_1": charged_1,
-        "charged_move_2": charged_2,
-        "animated": animated,
-        "artwork": artwork,
-        "sprite": sprite,
+        "id": cid, "name": name, "element": element, "form": form,
+        "hp": hp, "atk": atk, "def": df, "spd": spd, "cost": cost,
+        "colors": [c1, c2],
+        "tech": {"name": tech, "power": power, "effect": effect, "effect_text": EFFECT_TEXT[effect]},
+        "lore": lore,
+    }
+
+
+ROSTER: list[dict[str, Any]] = [
+    _c(1, "Fagulho", "brasa", "bicho", 110, 62, 48, 70, 2, "#ff7a3d", "#ffd166", "Estalo de Brasa", 34, "queimar", "Nasce da última faísca de uma fogueira esquecida."),
+    _c(2, "Tiçoara", "brasa", "ave", 118, 70, 50, 82, 3, "#e8452c", "#ffb347", "Rasante Ardente", 37, "impeto", "Risca o céu ao entardecer deixando um fio de luz."),
+    _c(3, "Cinzal", "brasa", "quadrupede", 140, 74, 62, 58, 4, "#b23a2e", "#ff9f1c", "Trilha de Cinzas", 41, "queimar", "Por onde passa, o chão fica morno por dias."),
+    _c(4, "Labarena", "brasa", "serpente", 150, 84, 60, 66, 5, "#d7263d", "#ffd23f", "Coluna de Fogo", 46, "queimar", "Dorme enrolada em brasas no fundo das grotas."),
+    _c(5, "Cipozim", "mata", "bicho", 120, 54, 58, 60, 2, "#58b368", "#d9ed92", "Laço de Cipó", 32, "regenerar", "Balança nos cipós e imita o canto dos pássaros."),
+    _c(6, "Brotéu", "mata", "quadrupede", 136, 60, 66, 50, 3, "#3f9b5f", "#f4d35e", "Seiva Viva", 35, "regenerar", "Carrega mudas nas costas e as planta onde descansa."),
+    _c(7, "Folhagar", "mata", "ave", 124, 72, 54, 78, 4, "#2d8a54", "#b5e48c", "Vendaval de Folhas", 40, "impeto", "Suas penas são folhas que nunca secam."),
+    _c(8, "Jatobarão", "mata", "golem", 172, 76, 80, 36, 5, "#2f6f4f", "#a7c957", "Raiz Profunda", 43, "regenerar", "Um tronco antigo que aprendeu a caminhar."),
+    _c(9, "Espumim", "mare", "bicho", 116, 56, 54, 68, 2, "#4cc9f0", "#e0fbfc", "Borrifo", 32, "drenar", "Aparece na espuma quando a onda quebra."),
+    _c(10, "Marulho", "mare", "serpente", 130, 66, 58, 64, 3, "#3a86ff", "#bde0fe", "Correnteza", 37, "drenar", "Desliza pelos igarapés sem fazer barulho."),
+    _c(11, "Rebojo", "mare", "quadrupede", 144, 70, 66, 56, 4, "#2667ff", "#90e0ef", "Redemoinho d'Água", 41, "drenar", "Gira em torno de si mesmo antes de atacar."),
+    _c(12, "Pororonca", "mare", "golem", 166, 80, 72, 44, 5, "#1d4ed8", "#a5f3fc", "Muralha de Maré", 44, "drenar", "Avança rio acima com o estrondo de uma onda."),
+    _c(13, "Seixote", "pedra", "bicho", 128, 56, 70, 40, 2, "#a68a64", "#e9d8a6", "Pedrada", 34, "quebra", "Um seixo de rio que criou pernas e teimosia."),
+    _c(14, "Lajedo", "pedra", "quadrupede", 150, 62, 80, 38, 3, "#8d7b68", "#ddb892", "Investida de Laje", 37, "quebra", "Toma sol imóvel até alguém confundi-lo com o chão."),
+    _c(15, "Cascalhudo", "pedra", "golem", 164, 72, 84, 30, 4, "#7f6f5f", "#f2cc8f", "Chuva de Cascalho", 41, "quebra", "Coleciona pedrinhas e as arremessa quando contrariado."),
+    _c(16, "Itaúna", "pedra", "serpente", 158, 82, 78, 46, 5, "#5c5248", "#ffc857", "Fenda de Granito", 46, "quebra", "Abre caminho pela rocha como se fosse areia."),
+    _c(17, "Brisol", "vento", "ave", 104, 58, 44, 90, 2, "#b8c0ff", "#ffffff", "Sopro Ligeiro", 32, "impeto", "Tão leve que precisa se segurar para não ir embora."),
+    _c(18, "Zunido", "vento", "bicho", 112, 66, 48, 86, 3, "#9d8df1", "#e0c3fc", "Zumbido Cortante", 36, "impeto", "Ouve-se primeiro; vê-se depois, se der tempo."),
+    _c(19, "Redemunho", "vento", "serpente", 126, 74, 52, 84, 4, "#7b6cf6", "#c8b6ff", "Espiral", 40, "impeto", "Um pé de vento que nunca parou de rodar."),
+    _c(20, "Ventarim", "vento", "quadrupede", 138, 82, 58, 80, 5, "#6247aa", "#e2cfea", "Tufão", 44, "impeto", "Corre na frente das tempestades anunciando a chuva."),
+]
+ROSTER_MAP: dict[int, dict[str, Any]] = {c["id"]: c for c in ROSTER}
+MIN_COST = min(c["cost"] for c in ROSTER)
+
+
+def element_multiplier(attack_element: str, defender_element: str) -> float:
+    if defender_element in STRONG_AGAINST.get(attack_element, ()):
+        return STRONG_MULT
+    if attack_element in STRONG_AGAINST.get(defender_element, ()):
+        return WEAK_MULT
+    return 1.0
+
+
+def team_cost(team_ids: list[int]) -> int:
+    return sum(ROSTER_MAP[cid]["cost"] for cid in team_ids if cid in ROSTER_MAP)
+
+
+def validate_team(team_ids: list[int]) -> str | None:
+    """Devolve a mensagem de erro, ou None se a equipe (parcial ou completa) for válida."""
+    if len(team_ids) > TEAM_SIZE:
+        return f"A equipe tem no máximo {TEAM_SIZE} Encantados."
+    if any(cid not in ROSTER_MAP for cid in team_ids):
+        return "Encantado desconhecido na equipe."
+    if len(set(team_ids)) != len(team_ids):
+        return "Não é possível repetir o mesmo Encantado."
+    cost = team_cost(team_ids)
+    if cost > TEAM_BUDGET:
+        return f"A equipe custa {cost} pontos; o limite é {TEAM_BUDGET}."
+    return None
+
+
+def auto_pick_team(current: list[int]) -> list[int]:
+    """Completa a equipe ao acaso sem estourar o orçamento."""
+    chosen = [cid for cid in dict.fromkeys(current) if cid in ROSTER_MAP][:TEAM_SIZE]
+    if validate_team(chosen):
+        chosen = []
+    while len(chosen) < TEAM_SIZE:
+        slots_after = TEAM_SIZE - len(chosen) - 1
+        room = TEAM_BUDGET - team_cost(chosen) - slots_after * MIN_COST
+        options = [c["id"] for c in ROSTER if c["id"] not in chosen and c["cost"] <= room]
+        chosen.append(random.choice(options))
+    return chosen
+
+
+def build_combatant(cid: int) -> dict[str, Any]:
+    base = ROSTER_MAP[cid]
+    return {
+        **{k: base[k] for k in ("id", "name", "element", "form", "colors", "atk", "def", "spd", "tech", "cost")},
+        "max_hp": base["hp"],
+        "hp": base["hp"],
+        "foco": START_FOCO,
+        "burn": 0,
+        "guarding": False,
+        "guarded_last": False,
         "fainted": False,
     }
 
 
-def auto_pick_team(current_team_ids: list[int], max_stamina: int = TEAM_STAMINA_LIMIT) -> list[int]:
-    """Completa aleatoriamente uma equipe de 3 Pokémon respeitando rigorosamente o limite de stamina."""
-    chosen = list(current_team_ids[:3])
-    current_cost = sum(calculate_pokemon_stamina(POKEMON_MAP[pid]) for pid in chosen if pid in POKEMON_MAP)
-
-    candidates = [p for p in ALL_POKEMON if p["id"] not in chosen]
-    random.shuffle(candidates)
-
-    while len(chosen) < 3 and candidates:
-        remaining_slots = 3 - len(chosen)
-        remaining_stamina = max_stamina - current_cost
-        max_cost_per_slot = remaining_stamina // remaining_slots
-
-        # Tenta achar um que caiba confortavelmente
-        pick = None
-        for cand in candidates:
-            c = calculate_pokemon_stamina(cand)
-            if c <= max_cost_per_slot:
-                pick = cand
-                break
-
-        # Se não achou com cota média, pega o de menor custo disponível
-        if not pick:
-            candidates.sort(key=calculate_pokemon_stamina)
-            if candidates and calculate_pokemon_stamina(candidates[0]) <= remaining_stamina:
-                pick = candidates[0]
-            else:
-                # Se ainda assim estourar, substitui o anterior mais caro por um mais leve
-                break
-
-        if pick:
-            chosen.append(pick["id"])
-            current_cost += calculate_pokemon_stamina(pick)
-            candidates.remove(pick)
-        else:
-            break
-
-    # Se ainda faltar (caso extremo), completa com clássicos leves garantidos (Pikachu, Squirtle, Bulbasaur)
-    fallbacks = [25, 1, 4, 7, 133, 16, 19, 10, 13]
-    for fid in fallbacks:
-        if len(chosen) >= 3:
-            break
-        if fid not in chosen:
-            chosen.append(fid)
-
-    return chosen[:3]
-
-
 class BattleState:
-    """Instância de uma batalha entre 2 jogadores (ou Jogador vs IA)."""
+    """Uma partida entre dois treinadores (ou treinador contra IA)."""
 
-    def __init__(
-        self,
-        room_id: str,
-        p1_id: int | None,
-        p1_name: str,
-        p2_id: int | None,
-        p2_name: str,
-        is_bot: bool = False,
-    ):
+    def __init__(self, room_id: str, p1_id: int | None, p1_name: str,
+                 p2_id: int | None, p2_name: str, is_bot: bool = False):
         self.room_id = room_id
-        self.p1_id = p1_id
-        self.p1_name = p1_name
-        self.p2_id = p2_id
-        self.p2_name = p2_name
+        self.p1_id, self.p1_name = p1_id, p1_name
+        self.p2_id, self.p2_name = p2_id, p2_name
         self.is_bot = is_bot
 
         self.phase = "DRAFT"  # DRAFT -> BATTLE -> FINISHED
-        self.draft_timer = 60  # 60 segundos regulamentares
-        self.p1_locked = False
-        self.p2_locked = False
+        self.draft_timer = 60
+        self.locked = {1: False, 2: False}
+        self.team_ids: dict[int, list[int]] = {1: [], 2: []}
+        self.teams: dict[int, list[dict[str, Any]]] = {1: [], 2: []}
+        self.active_idx = {1: 0, 2: 0}
+        self.switched_last = {1: False, 2: False}
 
-        self.p1_team_ids: list[int] = []
-        self.p2_team_ids: list[int] = []
-
-        self.p1_combatants: list[dict[str, Any]] = []
-        self.p2_combatants: list[dict[str, Any]] = []
-
-        self.p1_active_idx = 0
-        self.p2_active_idx = 0
-
-        self.p1_shields = 2
-        self.p2_shields = 2
-
-        self.p1_switch_cooldown = 0
-        self.p2_switch_cooldown = 0
-
-        # Ataque carregado pendente para decisão de escudo
-        # {"attacker": 1 or 2, "move": dict, "target": 2 or 1, "timeout": float}
-        self.pending_charge: dict[str, Any] | None = None
-
-        self.turns_played = 0
-        self.winner: int | None = None  # 1 para p1, 2 para p2, 0 para empate
+        self.round_no = 0
+        self.round_seconds = ROUND_SECONDS
+        self.choices: dict[int, dict[str, Any] | None] = {1: None, 2: None}
+        self.winner: int | None = None
         self.logs: list[str] = []
 
-    def start_battle_from_draft(self):
-        """Inicia o combate após a seleção dos 3 Pokémon."""
-        if len(self.p1_team_ids) < 3:
-            self.p1_team_ids = auto_pick_team(self.p1_team_ids)
-        if len(self.p2_team_ids) < 3:
-            self.p2_team_ids = auto_pick_team(self.p2_team_ids)
+    # ---------- utilidades ----------
+    def name_of(self, player: int) -> str:
+        return self.p1_name if player == 1 else self.p2_name
 
-        self.p1_combatants = [build_combatant(pid) for pid in self.p1_team_ids]
-        self.p2_combatants = [build_combatant(pid) for pid in self.p2_team_ids]
-        self.p1_active_idx = 0
-        self.p2_active_idx = 0
-        self.p1_shields = 2
-        self.p2_shields = 2
+    def player_of(self, user_id: int) -> int:
+        return 1 if self.p1_id == user_id else 2
+
+    def active(self, player: int) -> dict[str, Any]:
+        return self.teams[player][self.active_idx[player]]
+
+    def both_ready(self) -> bool:
+        return self.choices[1] is not None and self.choices[2] is not None
+
+    # ---------- fluxo ----------
+    def start_battle_from_draft(self) -> None:
+        for player in (1, 2):
+            self.team_ids[player] = auto_pick_team(self.team_ids[player])
+            self.teams[player] = [build_combatant(cid) for cid in self.team_ids[player]]
         self.phase = "BATTLE"
+        self.logs.append(
+            f"{self.p1_name} abre com {self.active(1)['name']}; "
+            f"{self.p2_name} abre com {self.active(2)['name']}."
+        )
 
-        c1 = self.p1_combatants[0]
-        c2 = self.p2_combatants[0]
-        self.logs.append(f"⚔️ A BATALHA COMEÇOU! {self.p1_name} enviou {c1['name']} vs {self.p2_name} enviou {c2['name']}!")
+    def begin_round(self) -> None:
+        self.round_no += 1
+        self.choices = {1: None, 2: None}
 
-    def get_active(self, player_num: int) -> dict[str, Any]:
-        team = self.p1_combatants if player_num == 1 else self.p2_combatants
-        idx = self.p1_active_idx if player_num == 1 else self.p2_active_idx
-        return team[idx]
-
-    def execute_fast_attack(self, player_num: int) -> dict[str, Any]:
-        """Executa um Ataque Rápido."""
-        if self.phase != "BATTLE" or self.pending_charge is not None:
-            return {"ok": False, "reason": "Não é possível atacar agora."}
-
-        atk_p = self.get_active(player_num)
-        def_num = 2 if player_num == 1 else 1
-        def_p = self.get_active(def_num)
-
-        if atk_p["current_hp"] <= 0 or def_p["current_hp"] <= 0:
-            return {"ok": False, "reason": "Pokémon desmaiado."}
-
-        move = atk_p["fast_move"]
-        atk_type = move["type"]
-
-        # Efetividade de tipo
-        eff = get_type_multiplier(atk_type, def_p["types"])
-        stab = 1.2 if atk_type in [t.lower() for t in atk_p["types"]] else 1.0
-
-        # Cálculo de dano dinâmico
-        base_dmg = move["power"] * (atk_p["attack"] / max(30, def_p["defense"]))
-        dmg = max(3, int(base_dmg * eff * stab))
-
-        def_p["current_hp"] = max(0, def_p["current_hp"] - dmg)
-        atk_p["energy"] = min(100, atk_p["energy"] + move["energy"])
-
-        eff_text = ""
-        if eff >= 2.0:
-            eff_text = "Super efetivo! 💥"
-        elif eff <= 0.5 and eff > 0:
-            eff_text = "Pouco efetivo... 🛡️"
-        elif eff == 0.0:
-            eff_text = "Não surtiu efeito! (Imune)"
-
-        log_msg = f"{atk_p['name']} usou {move['name']} em {def_p['name']} causando {dmg} de dano! {eff_text}".strip()
-        self.logs.append(log_msg)
-        self.turns_played += 1
-
-        fainted = False
-        if def_p["current_hp"] <= 0:
-            def_p["fainted"] = True
-            fainted = True
-            self.logs.append(f"💀 {def_p['name']} desmaiou!")
-            self._handle_faint(def_num)
-
+    def available_actions(self, player: int) -> dict[str, Any]:
+        me = self.active(player)
+        bench = [i for i, c in enumerate(self.teams[player])
+                 if i != self.active_idx[player] and c["hp"] > 0]
         return {
-            "ok": True,
-            "attacker": player_num,
-            "defender": def_num,
-            "move": move,
-            "damage": dmg,
-            "multiplier": eff,
-            "eff_text": eff_text,
-            "defender_hp": def_p["current_hp"],
-            "attacker_energy": atk_p["energy"],
-            "fainted": fainted,
-            "log": log_msg,
+            "golpe": True,
+            "tecnica": me["foco"] >= TECH_COST,
+            "guarda": not me["guarded_last"],
+            "trocar": bench if not self.switched_last[player] else [],
         }
 
-    def queue_charged_attack(self, player_num: int, move_slot: int) -> dict[str, Any]:
-        """Dispara um Ataque Carregado potente que solicita reação de escudo do oponente."""
-        if self.phase != "BATTLE" or self.pending_charge is not None:
-            return {"ok": False, "reason": "Ataque carregado indisponível no momento."}
-
-        atk_p = self.get_active(player_num)
-        def_num = 2 if player_num == 1 else 1
-        def_p = self.get_active(def_num)
-
-        move = atk_p["charged_move_1"] if move_slot == 1 else atk_p["charged_move_2"]
-        cost = move["energy"]
-
-        if atk_p["energy"] < cost:
-            return {"ok": False, "reason": f"Energia insuficiente! Precisa de {cost} de energia."}
-
-        atk_p["energy"] -= cost
-        def_shields = self.p2_shields if player_num == 1 else self.p1_shields
-
-        self.pending_charge = {
-            "attacker": player_num,
-            "defender": def_num,
-            "move": move,
-            "shields_available": def_shields,
-        }
-
-        log_msg = f"⚡ {atk_p['name']} está prestes a desferir {move['name']}!"
-        self.logs.append(log_msg)
-
-        return {
-            "ok": True,
-            "pending": True,
-            "attacker": player_num,
-            "defender": def_num,
-            "move": move,
-            "shields_available": def_shields,
-            "log": log_msg,
-        }
-
-    def resolve_charged_attack(self, use_shield: bool) -> dict[str, Any]:
-        """Aplica o dano do ataque carregado considerando se o defensor acionou o escudo."""
-        if not self.pending_charge:
-            return {"ok": False, "reason": "Nenhum ataque carregado pendente."}
-
-        charge = self.pending_charge
-        self.pending_charge = None
-
-        atk_num = charge["attacker"]
-        def_num = charge["defender"]
-        move = charge["move"]
-
-        atk_p = self.get_active(atk_num)
-        def_p = self.get_active(def_num)
-
-        # Verifica se o defensor tem escudos e quer usar
-        shield_used = False
-        if use_shield:
-            if def_num == 1 and self.p1_shields > 0:
-                self.p1_shields -= 1
-                shield_used = True
-            elif def_num == 2 and self.p2_shields > 0:
-                self.p2_shields -= 1
-                shield_used = True
-
-        atk_type = move["type"]
-        eff = get_type_multiplier(atk_type, def_p["types"])
-        stab = 1.2 if atk_type in [t.lower() for t in atk_p["types"]] else 1.0
-
-        if shield_used:
-            dmg = 1  # Chip damage
-            eff_text = "🛡️ O escudo protegeu o Pokémon!"
-            log_msg = f"🛡️ {self.p1_name if def_num == 1 else self.p2_name} usou ESCUDO e bloqueou {move['name']}!"
+    def submit_action(self, player: int, action: dict[str, Any]) -> dict[str, Any]:
+        if self.phase != "BATTLE":
+            return {"ok": False, "reason": "A partida não está em andamento."}
+        if self.choices[player] is not None:
+            return {"ok": False, "reason": "Você já escolheu a ação desta rodada."}
+        kind = action.get("kind")
+        allowed = self.available_actions(player)
+        if kind == "golpe":
+            choice = {"kind": "golpe"}
+        elif kind == "tecnica":
+            if not allowed["tecnica"]:
+                return {"ok": False, "reason": f"A Técnica custa {TECH_COST} de Foco."}
+            choice = {"kind": "tecnica"}
+        elif kind == "guarda":
+            if not allowed["guarda"]:
+                return {"ok": False, "reason": "Não dá para usar Guarda duas rodadas seguidas."}
+            choice = {"kind": "guarda"}
+        elif kind == "trocar":
+            try:
+                idx = int(action.get("idx", -1))
+            except (TypeError, ValueError):
+                idx = -1
+            if idx not in allowed["trocar"]:
+                reason = ("Não dá para trocar duas rodadas seguidas."
+                          if self.switched_last[player] else "Esse Encantado não pode entrar agora.")
+                return {"ok": False, "reason": reason}
+            choice = {"kind": "trocar", "idx": idx}
         else:
-            base_dmg = move["power"] * (atk_p["attack"] / max(30, def_p["defense"]))
-            dmg = max(10, int(base_dmg * eff * stab))
-            eff_text = "SUPER EFETIVO! 💥" if eff >= 2.0 else ("Pouco efetivo... 🛡️" if eff <= 0.5 else "")
-            log_msg = f"💥 {atk_p['name']} detonou {move['name']} causando {dmg} de dano em {def_p['name']}! {eff_text}".strip()
+            return {"ok": False, "reason": "Ação desconhecida."}
+        self.choices[player] = choice
+        return {"ok": True}
 
-        def_p["current_hp"] = max(0, def_p["current_hp"] - dmg)
-        self.logs.append(log_msg)
-        self.turns_played += 1
+    # ---------- resolução ----------
+    def resolve_round(self) -> list[dict[str, Any]]:
+        events: list[dict[str, Any]] = []
+        acts = {p: (self.choices[p] or {"kind": "golpe"}) for p in (1, 2)}
+        lost_turn: set[int] = set()
 
-        fainted = False
-        if def_p["current_hp"] <= 0:
-            def_p["fainted"] = True
-            fainted = True
-            self.logs.append(f"💀 {def_p['name']} desmaiou!")
-            self._handle_faint(def_num)
+        for p in (1, 2):
+            if acts[p]["kind"] == "trocar":
+                self.active(p)["guarded_last"] = False
+                self.active_idx[p] = acts[p]["idx"]
+                events.append(self._event("switch", p, idx=acts[p]["idx"],
+                                          text=f"{self.name_of(p)} chama {self.active(p)['name']}."))
+        for p in (1, 2):
+            if acts[p]["kind"] == "guarda":
+                me = self.active(p)
+                me["guarding"] = True
+                me["foco"] = min(MAX_FOCO, me["foco"] + 2)
+                events.append(self._event("guard", p, foco=me["foco"],
+                                          text=f"{me['name']} ergue a Guarda."))
 
-        return {
-            "ok": True,
-            "attacker": atk_num,
-            "defender": def_num,
-            "move": move,
-            "shield_used": shield_used,
-            "shields_left": self.p1_shields if def_num == 1 else self.p2_shields,
-            "damage": dmg,
-            "multiplier": eff,
-            "eff_text": eff_text,
-            "defender_hp": def_p["current_hp"],
-            "fainted": fainted,
-            "log": log_msg,
-        }
+        attackers = [p for p in (1, 2) if acts[p]["kind"] in ("golpe", "tecnica")]
+        attackers.sort(key=lambda p: (self._priority(p, acts[p]), self.active(p)["spd"], random.random()),
+                       reverse=True)
+        for p in attackers:
+            if self.phase != "BATTLE" or p in lost_turn:
+                continue
+            target_player = 3 - p
+            events.extend(self._attack(p, acts[p]["kind"]))
+            if self.active(target_player)["hp"] <= 0:
+                lost_turn.add(target_player)
+                events.extend(self._handle_faint(target_player))
 
-    def switch_pokemon(self, player_num: int, target_idx: int) -> dict[str, Any]:
-        """Troca o Pokémon em campo por outro da reserva."""
-        if self.phase != "BATTLE" or self.pending_charge is not None:
-            return {"ok": False, "reason": "Não é possível trocar agora."}
+        if self.phase == "BATTLE":
+            events.extend(self._end_of_round(acts))
+        self.logs.extend(e["text"] for e in events if e.get("text"))
+        return events
 
-        team = self.p1_combatants if player_num == 1 else self.p2_combatants
-        curr_idx = self.p1_active_idx if player_num == 1 else self.p2_active_idx
+    def _priority(self, player: int, act: dict[str, Any]) -> int:
+        tech = self.active(player)["tech"]
+        return 1 if act["kind"] == "tecnica" and tech["effect"] == "impeto" else 0
 
-        if target_idx < 0 or target_idx >= len(team):
-            return {"ok": False, "reason": "Posição inválida."}
-        if target_idx == curr_idx:
-            return {"ok": False, "reason": "Este Pokémon já está em campo."}
-        if team[target_idx]["current_hp"] <= 0:
-            return {"ok": False, "reason": "Este Pokémon está desmaiado."}
+    def _event(self, t: str, player: int, **data: Any) -> dict[str, Any]:
+        return {"t": t, "p": player, **data}
 
-        # Cooldown de troca (a não ser que o atual esteja fainted)
-        cooldown = self.p1_switch_cooldown if player_num == 1 else self.p2_switch_cooldown
-        if team[curr_idx]["current_hp"] > 0 and cooldown > 0:
-            return {"ok": False, "reason": f"Aguarde {cooldown}s para trocar novamente."}
+    def _attack(self, player: int, kind: str) -> list[dict[str, Any]]:
+        atk = self.active(player)
+        target_player = 3 - player
+        tgt = self.active(target_player)
+        is_tech = kind == "tecnica"
+        effect = atk["tech"]["effect"] if is_tech else None
 
-        if player_num == 1:
-            self.p1_active_idx = target_idx
-            self.p1_switch_cooldown = 15  # 15s de cooldown
+        if is_tech:
+            atk["foco"] -= TECH_COST
+            power, move_name = atk["tech"]["power"] * TECH_SCALE, atk["tech"]["name"]
         else:
-            self.p2_active_idx = target_idx
-            self.p2_switch_cooldown = 15
+            atk["foco"] = min(MAX_FOCO, atk["foco"] + 1)
+            power, move_name = STRIKE_POWER, "Golpe"
+        if effect == "impeto":
+            atk["foco"] = min(MAX_FOCO, atk["foco"] + 1)
 
-        new_poke = team[target_idx]
-        pname = self.p1_name if player_num == 1 else self.p2_name
-        log_msg = f"🔄 {pname} trocou para {new_poke['name']}!"
-        self.logs.append(log_msg)
+        mult = element_multiplier(atk["element"], tgt["element"])
+        guarded = tgt["guarding"]
+        broke_guard = guarded and effect == "quebra"
+        guard_mult = 1.0
+        if guarded and not broke_guard:
+            guard_mult = GUARD_VS_TECH if is_tech else GUARD_VS_STRIKE
+        ratio = (atk["atk"] + 40) / (tgt["def"] + 40)
+        dmg = max(2, round(power * ratio * mult * guard_mult * random.uniform(0.93, 1.07)))
+        tgt["hp"] = max(0, tgt["hp"] - dmg)
 
-        return {
-            "ok": True,
-            "player": player_num,
-            "active_idx": target_idx,
-            "pokemon": new_poke,
-            "log": log_msg,
-        }
+        note = " É vantagem de elemento!" if mult > 1 else (" O elemento resiste." if mult < 1 else "")
+        if broke_guard:
+            note += " A Guarda foi atravessada!"
+        elif guarded:
+            note += " A Guarda amortece."
+        events = [self._event(
+            "attack", player, kind=kind, name=move_name, element=atk["element"], dmg=dmg, mult=mult,
+            guarded=guarded, broke_guard=broke_guard, target_hp=tgt["hp"], foco=atk["foco"],
+            text=f"{atk['name']} usa {move_name} em {tgt['name']}: {dmg} de dano.{note}",
+        )]
 
-    def _handle_faint(self, player_num: int):
-        """Verifica se restam Pokémon vivos ou se a partida acabou."""
-        team = self.p1_combatants if player_num == 1 else self.p2_combatants
-        alive_indices = [i for i, p in enumerate(team) if p["current_hp"] > 0]
+        if effect == "queimar" and tgt["hp"] > 0:
+            tgt["burn"] = BURN_ROUNDS
+            events.append(self._event("status", target_player, k="queimar",
+                                      text=f"{tgt['name']} está em chamas."))
+        elif effect == "regenerar":
+            heal = min(atk["max_hp"] - atk["hp"], round(atk["max_hp"] * REGEN_FRACTION))
+            if heal > 0:
+                atk["hp"] += heal
+                events.append(self._event("heal", player, heal=heal, hp=atk["hp"],
+                                          text=f"{atk['name']} recupera {heal} de vida."))
+        elif effect == "drenar" and tgt["hp"] > 0 and tgt["foco"] > 0:
+            tgt["foco"] = max(0, tgt["foco"] - DRAIN_FOCO)
+            events.append(self._event("drain", target_player, foco=tgt["foco"],
+                                      text=f"{tgt['name']} perde Foco."))
+        return events
 
-        if not alive_indices:
-            # Todos desmaiaram! O outro venceu.
+    def _handle_faint(self, player: int) -> list[dict[str, Any]]:
+        fallen = self.active(player)
+        fallen["fainted"] = True
+        fallen["burn"] = 0
+        events = [self._event("faint", player, text=f"{fallen['name']} foi vencido.")]
+        alive = [i for i, c in enumerate(self.teams[player]) if c["hp"] > 0]
+        if not alive:
             self.phase = "FINISHED"
-            self.winner = 2 if player_num == 1 else 1
-            winner_name = self.p2_name if self.winner == 2 else self.p1_name
-            self.logs.append(f"🏆 VITÓRIA! {winner_name} venceu a batalha Pokémon!")
+            self.winner = 3 - player
+            events.append(self._event("end", self.winner,
+                                      text=f"{self.name_of(self.winner)} vence o duelo!"))
         else:
-            # Seleciona automaticamente o próximo vivo
-            next_idx = alive_indices[0]
-            if player_num == 1:
-                self.p1_active_idx = next_idx
-            else:
-                self.p2_active_idx = next_idx
-            pname = self.p1_name if player_num == 1 else self.p2_name
-            self.logs.append(f"⚡ {pname} enviou {team[next_idx]['name']} para o campo!")
+            self.active_idx[player] = alive[0]
+            events.append(self._event("enter", player, idx=alive[0],
+                                      text=f"{self.name_of(player)} envia {self.active(player)['name']}."))
+        return events
 
-    def bot_action_tick(self) -> dict[str, Any] | None:
-        """Executa a decisão inteligente da IA (Treinador Bot)."""
-        if not self.is_bot or self.phase != "BATTLE":
-            return None
+    def _end_of_round(self, acts: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
+        events: list[dict[str, Any]] = []
+        for p in (1, 2):
+            me = self.active(p)
+            if me["burn"] > 0 and me["hp"] > 1:
+                dmg = min(me["hp"] - 1, max(1, round(me["max_hp"] * BURN_FRACTION)))
+                me["hp"] -= dmg
+                me["burn"] -= 1
+                events.append(self._event("burn", p, dmg=dmg, hp=me["hp"],
+                                          text=f"{me['name']} sofre {dmg} com a queimadura."))
+            for c in self.teams[p]:
+                c["guarded_last"] = c["guarding"]
+                c["guarding"] = False
+            self.switched_last[p] = acts[p]["kind"] == "trocar"
+        return events
 
-        # 1. Se houver ataque carregado pendente contra o Bot, decide se usa escudo
-        if self.pending_charge and self.pending_charge["defender"] == 2:
-            should_shield = False
-            if self.p2_shields > 0:
-                # Usa escudo se for super efetivo ou se a vida estiver abaixo de 70%
-                eff = get_type_multiplier(self.pending_charge["move"]["type"], self.get_active(2)["types"])
-                hp_ratio = self.get_active(2)["current_hp"] / self.get_active(2)["max_hp"]
-                if eff >= 1.5 or hp_ratio < 0.65 or random.random() < 0.6:
-                    should_shield = True
-            return {"action": "resolve_charged", "use_shield": should_shield}
+    # ---------- IA ----------
+    def bot_choose(self, player: int = 2) -> dict[str, Any]:
+        me, foe = self.active(player), self.active(3 - player)
+        allowed = self.available_actions(player)
+        my_edge = element_multiplier(me["element"], foe["element"])
+        foe_edge = element_multiplier(foe["element"], me["element"])
 
-        if self.pending_charge is not None:
-            return None
+        if allowed["trocar"] and foe_edge > 1 and my_edge <= 1 and random.random() < 0.5:
+            better = [i for i in allowed["trocar"]
+                      if element_multiplier(foe["element"], self.teams[player][i]["element"]) < 1]
+            if better:
+                return {"kind": "trocar", "idx": random.choice(better)}
+        if allowed["tecnica"] and (my_edge >= 1 or random.random() < 0.6):
+            if random.random() < 0.8:
+                return {"kind": "tecnica"}
+        if allowed["guarda"] and foe["foco"] >= TECH_COST and random.random() < 0.55:
+            return {"kind": "guarda"}
+        if allowed["guarda"] and me["foco"] < TECH_COST and random.random() < 0.2:
+            return {"kind": "guarda"}
+        return {"kind": "golpe"}
 
-        bot_p = self.get_active(2)
-        user_p = self.get_active(1)
-
-        if bot_p["current_hp"] <= 0 or user_p["current_hp"] <= 0:
-            return None
-
-        # 2. Avalia possibilidade de troca tática se o oponente tiver enorme vantagem de tipo
-        eff_against_bot = get_type_multiplier(user_p["fast_move"]["type"], bot_p["types"])
-        if eff_against_bot >= 2.0 and self.p2_switch_cooldown <= 0:
-            # Procura no banco alguém que resista
-            for i, cand in enumerate(self.p2_combatants):
-                if i != self.p2_active_idx and cand["current_hp"] > 0:
-                    cand_eff = get_type_multiplier(user_p["fast_move"]["type"], cand["types"])
-                    if cand_eff < 1.0:
-                        return {"action": "switch", "target_idx": i}
-
-        # 3. Dispara ataque carregado se tiver energia
-        if bot_p["energy"] >= bot_p["charged_move_2"]["energy"]:
-            # Escolhe o mais efetivo contra o usuário
-            eff1 = get_type_multiplier(bot_p["charged_move_1"]["type"], user_p["types"])
-            eff2 = get_type_multiplier(bot_p["charged_move_2"]["type"], user_p["types"])
-            slot = 2 if eff2 >= eff1 else 1
-            return {"action": "charged_attack", "slot": slot}
-        elif bot_p["energy"] >= bot_p["charged_move_1"]["energy"]:
-            return {"action": "charged_attack", "slot": 1}
-
-        # 4. Caso contrário, desfere ataque rápido
-        return {"action": "fast_attack"}
-
-    def to_client_state(self, for_player: int = 1) -> dict[str, Any]:
-        """Serializa o estado para transmissão JSON via WebSocket."""
+    # ---------- serialização ----------
+    def to_client_state(self) -> dict[str, Any]:
         return {
             "room_id": self.room_id,
             "phase": self.phase,
             "draft_timer": self.draft_timer,
-            "p1_name": self.p1_name,
-            "p2_name": self.p2_name,
-            "p1_id": self.p1_id,
-            "p2_id": self.p2_id,
+            "round_no": self.round_no,
+            "round_seconds": self.round_seconds,
             "is_bot": self.is_bot,
-            "p1_locked": self.p1_locked,
-            "p2_locked": self.p2_locked,
-            "p1_team_ids": self.p1_team_ids,
-            "p2_team_ids": self.p2_team_ids,
-            "p1_active_idx": self.p1_active_idx,
-            "p2_active_idx": self.p2_active_idx,
-            "p1_shields": self.p1_shields,
-            "p2_shields": self.p2_shields,
-            "p1_switch_cooldown": self.p1_switch_cooldown,
-            "p2_switch_cooldown": self.p2_switch_cooldown,
-            "p1_combatants": self.p1_combatants,
-            "p2_combatants": self.p2_combatants,
-            "pending_charge": self.pending_charge,
+            "p1_name": self.p1_name, "p2_name": self.p2_name,
+            "p1_id": self.p1_id, "p2_id": self.p2_id,
+            "p1_locked": self.locked[1], "p2_locked": self.locked[2],
+            "p1_team_ids": self.team_ids[1], "p2_team_ids": self.team_ids[2],
+            "p1_team": self.teams[1], "p2_team": self.teams[2],
+            "p1_active_idx": self.active_idx[1], "p2_active_idx": self.active_idx[2],
+            "p1_ready": self.choices[1] is not None, "p2_ready": self.choices[2] is not None,
+            "p1_actions": self.available_actions(1) if self.phase == "BATTLE" else None,
+            "p2_actions": self.available_actions(2) if self.phase == "BATTLE" else None,
             "winner": self.winner,
-            "winner_name": (self.p1_name if self.winner == 1 else self.p2_name) if self.winner else None,
-            "logs": self.logs[-8:],  # Últimos logs relevantes
+            "winner_name": self.name_of(self.winner) if self.winner else None,
+            "logs": self.logs[-8:],
         }
 
+
+def rules_payload() -> dict[str, Any]:
+    """Dados estáticos que o cliente precisa para montar o draft e a ajuda."""
+    return {
+        "roster": ROSTER,
+        "elements": ELEMENTS,
+        "strong_against": {k: list(v) for k, v in STRONG_AGAINST.items()},
+        "team_size": TEAM_SIZE,
+        "team_budget": TEAM_BUDGET,
+        "round_seconds": ROUND_SECONDS,
+        "max_foco": MAX_FOCO,
+        "tech_cost": TECH_COST,
+    }

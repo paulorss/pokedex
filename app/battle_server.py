@@ -1,17 +1,19 @@
 """
-Servidor WebSocket e REST para o Módulo de Batalha Pokémon Online.
-Gerencia matchmaking, convites em tempo real, salas de draft com timer de 60s,
-regras de batalha sincronizadas e bots de IA.
+Servidor WebSocket e REST do "Duelo dos Encantados".
+Gerencia contas, salão (lista de treinadores e convites), draft com timer de 60s
+e o laço de rodadas: coleta as duas ações, resolve e transmite os eventos.
 """
 from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import os
 import random
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Header, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from app.battle_db import (
@@ -26,40 +28,35 @@ from app.battle_db import (
     register_user,
 )
 from app.battle_engine import (
+    ROUND_SECONDS,
     BattleState,
-    POKEMON_MAP,
-    TEAM_STAMINA_LIMIT,
     auto_pick_team,
-    calculate_pokemon_stamina,
+    rules_payload,
+    validate_team,
 )
 
+log = logging.getLogger("duelo")
 router = APIRouter(prefix="/api/battle", tags=["battle"])
 
-# Mapas de conexões ativas e salas de batalha
 # user_id -> {"ws": WebSocket, "user": dict, "in_battle": bool, "room_id": str | None}
 online_users: dict[int, dict[str, Any]] = {}
-
-# room_id -> {"state": BattleState, "p1_ws": WebSocket | None, "p2_ws": WebSocket | None, "task": asyncio.Task | None}
+# room_id -> {"state": BattleState, "p1_ws": WebSocket | None, "p2_ws": WebSocket | None, "closed": bool}
 active_rooms: dict[str, dict[str, Any]] = {}
-
-# Convites pendentes: invite_id -> {"from_user": dict, "to_user": dict, "timeout_task": asyncio.Task}
+# invite_id -> {"from_user": dict, "to_user": dict}
 pending_invites: dict[str, dict[str, Any]] = {}
 
-BOT_NAMES = [
-    "Treinador Red",
-    "Líder Brock (Pedra)",
-    "Líder Misty (Água)",
-    "Campeã Cynthia",
-    "Treinador Ash",
-    "Gary Carvalho",
-]
+BOT_NAMES = ["Mestra Aruá", "Velho Timbó", "Guardiã Jaci", "Andarilho Caué", "Dona Iracema", "Menino Tico"]
+DEFAULT_AVATAR = 1
+POLL_SECONDS = 0.2
+EVENT_SECONDS = float(os.environ.get("DUELO_EVENT_SECONDS", "1.25"))  # o teste automatizado acelera;   # tempo que o cliente leva para animar cada evento
+RESULT_PADDING = 0.9
 
 
 class RegisterRequest(BaseModel):
     username: str
     password: str
     display_name: str | None = None
-    avatar_id: int | None = 25
+    avatar_id: int | None = DEFAULT_AVATAR
 
 
 class LoginRequest(BaseModel):
@@ -67,14 +64,14 @@ class LoginRequest(BaseModel):
     password: str
 
 
-# ==================== REST ENDPOINTS ====================
+# ==================== REST ====================
 
 
 @router.post("/register")
 def api_register(req: RegisterRequest):
     try:
-        data = register_user(req.username, req.password, req.display_name, req.avatar_id or 25)
-        return {"ok": True, "user": data}
+        return {"ok": True, "user": register_user(req.username, req.password, req.display_name,
+                                                  req.avatar_id or DEFAULT_AVATAR)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -82,21 +79,23 @@ def api_register(req: RegisterRequest):
 @router.post("/login")
 def api_login(req: LoginRequest):
     try:
-        data = login_user(req.username, req.password)
-        return {"ok": True, "user": data}
+        return {"ok": True, "user": login_user(req.username, req.password)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/me")
 def api_me(authorization: str | None = Header(None)):
-    token = ""
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization[7:].strip()
+    token = authorization[7:].strip() if authorization and authorization.startswith("Bearer ") else ""
     user = get_user_by_token(token)
     if not user:
         raise HTTPException(status_code=401, detail="Sessão inválida ou expirada.")
     return {"ok": True, "user": user}
+
+
+@router.get("/rules")
+def api_rules():
+    return {"ok": True, **rules_payload()}
 
 
 @router.get("/leaderboard")
@@ -104,645 +103,330 @@ def api_leaderboard():
     return {"ok": True, "leaderboard": get_leaderboard(25)}
 
 
-@router.get("/online_users")
-def api_online():
-    users_list = []
-    for uid, data in online_users.items():
-        u = data["user"]
-        users_list.append({
-            "id": u["id"],
-            "username": u["username"],
-            "display_name": u["display_name"],
-            "avatar_id": u["avatar_id"],
-            "rating": u["rating"],
-            "in_battle": data.get("in_battle", False),
-        })
-    return {"ok": True, "users": users_list}
-
-
 @router.get("/trainers")
 def api_trainers():
-    trainers = get_all_trainers(100)
-    for t in trainers:
-        uid = t["id"]
-        t["is_online"] = uid in online_users
-        t["in_battle"] = online_users[uid].get("in_battle", False) if uid in online_users else False
-    return {"ok": True, "trainers": trainers}
+    return {"ok": True, "trainers": _trainers_with_presence()}
 
 
 @router.get("/history")
 def api_history(user_id: int | None = None):
-    return {"ok": True, "history": get_recent_battles(user_id=user_id, limit=15)}
+    rows = get_recent_battles(user_id=user_id, limit=15)
+    for r in rows:  # o histórico da lista não precisa das equipes completas
+        r.pop("player1_team", None)
+        r.pop("player2_team", None)
+    return {"ok": True, "history": rows}
 
 
-@router.get("/stamina_info")
-def api_stamina_info():
-    """Retorna o limite regulamentar e tabela de custos."""
-    return {"ok": True, "limit": TEAM_STAMINA_LIMIT}
+# ==================== transmissão ====================
 
 
-# ==================== WEBSOCKET DISPATCHER ====================
+def _public_user(u: dict[str, Any]) -> dict[str, Any]:
+    return {k: u.get(k) for k in ("id", "username", "display_name", "avatar_id", "rating")}
 
 
-async def broadcast_lobby():
-    """Transmite a lista atualizada de treinadores cadastrados e status online para o lobby."""
-    users_list = []
-    for uid, data in online_users.items():
-        u = data["user"]
-        users_list.append({
-            "id": u["id"],
-            "username": u["username"],
-            "display_name": u["display_name"],
-            "avatar_id": u["avatar_id"],
-            "rating": u["rating"],
-            "in_battle": data.get("in_battle", False),
-        })
-
+def _trainers_with_presence() -> list[dict[str, Any]]:
     trainers = get_all_trainers(100)
     for t in trainers:
-        uid = t["id"]
-        t["is_online"] = uid in online_users
-        t["in_battle"] = online_users[uid].get("in_battle", False) if uid in online_users else False
-
-    msg = json.dumps({
-        "type": "lobby_update",
-        "online_users": users_list,
-        "trainers": trainers,
-    }, ensure_ascii=False)
-    for uid, data in list(online_users.items()):
-        if not data.get("in_battle"):
-            try:
-                await data["ws"].send_text(msg)
-            except Exception:
-                pass
+        presence = online_users.get(t["id"])
+        t["is_online"] = presence is not None
+        t["in_battle"] = bool(presence and presence.get("in_battle"))
+    return trainers
 
 
-async def send_to_user(user_id: int, msg: dict[str, Any]):
-    if user_id in online_users:
-        try:
-            await online_users[user_id]["ws"].send_text(json.dumps(msg, ensure_ascii=False))
-        except Exception:
-            pass
-
-
-async def broadcast_room(room_id: str, msg: dict[str, Any]):
-    room = active_rooms.get(room_id)
-    if not room:
+async def _send(ws: WebSocket | None, msg: dict[str, Any]) -> None:
+    if ws is None:
         return
-    text = json.dumps(msg, ensure_ascii=False)
-    for ws in (room.get("p1_ws"), room.get("p2_ws")):
-        if ws:
-            try:
-                await ws.send_text(text)
-            except Exception:
-                pass
+    try:
+        await ws.send_text(json.dumps(msg, ensure_ascii=False))
+    except Exception:  # conexão já encerrada: a limpeza ocorre no endpoint
+        log.debug("envio descartado: conexão fechada")
 
 
-async def run_draft_timer(room_id: str):
-    """Timer regressivo de 60 segundos com auto-pick no timeout."""
+async def broadcast_lobby() -> None:
+    msg = {"type": "lobby_update", "trainers": _trainers_with_presence()}
+    for data in list(online_users.values()):
+        if not data.get("in_battle"):
+            await _send(data["ws"], msg)
+
+
+async def send_to_user(user_id: int, msg: dict[str, Any]) -> None:
+    if user_id in online_users:
+        await _send(online_users[user_id]["ws"], msg)
+
+
+async def broadcast_room(room_id: str, msg: dict[str, Any]) -> None:
+    room = active_rooms.get(room_id)
+    if room:
+        await _send(room.get("p1_ws"), msg)
+        await _send(room.get("p2_ws"), msg)
+
+
+# ==================== fluxo da partida ====================
+
+
+def _open_room(state: BattleState, p1_ws: WebSocket, p2_ws: WebSocket | None) -> None:
+    active_rooms[state.room_id] = {"state": state, "p1_ws": p1_ws, "p2_ws": p2_ws, "closed": False}
+    for uid in (state.p1_id, state.p2_id if p2_ws else None):
+        if uid in online_users:
+            online_users[uid]["in_battle"] = True
+            online_users[uid]["room_id"] = state.room_id
+    asyncio.create_task(run_draft_timer(state.room_id))
+
+
+async def run_draft_timer(room_id: str) -> None:
     room = active_rooms.get(room_id)
     if not room:
         return
     state: BattleState = room["state"]
-
-    while state.phase == "DRAFT" and state.draft_timer > 0:
+    while state.phase == "DRAFT" and state.draft_timer > 0 and not room["closed"]:
         await asyncio.sleep(1)
-        # Se a sala foi fechada nesse meio tempo
-        if room_id not in active_rooms:
-            return
         state.draft_timer -= 1
-        await broadcast_room(room_id, {
-            "type": "draft_tick",
-            "timer": state.draft_timer,
-            "p1_locked": state.p1_locked,
-            "p2_locked": state.p2_locked,
-            "p1_team_ids": state.p1_team_ids,
-            "p2_team_ids": state.p2_team_ids,
-        })
-
-        if state.p1_locked and state.p2_locked:
-            break
-
-    # Se o tempo esgotou ou ambos confirmaram, inicia combate
-    if state.phase == "DRAFT":
-        state.start_battle_from_draft()
-        await broadcast_room(room_id, {
-            "type": "battle_started",
-            "state": state.to_client_state(),
-            "log": "⚔️ Equipes confirmadas! Batalha iniciada!",
-        })
-
-        # Se for contra Bot, inicia a rotina de ações do Bot
-        if state.is_bot:
-            asyncio.create_task(run_bot_loop(room_id))
+        await broadcast_room(room_id, {"type": "draft_tick", "timer": state.draft_timer})
+    if state.phase == "DRAFT" and not room["closed"]:
+        await start_battle(room_id)
 
 
-async def run_bot_loop(room_id: str):
-    """Simulador de ações e reações da IA."""
+async def start_battle(room_id: str) -> None:
+    room = active_rooms.get(room_id)
+    if not room or room["state"].phase != "DRAFT":
+        return
+    state: BattleState = room["state"]
+    state.start_battle_from_draft()
+    await broadcast_room(room_id, {"type": "battle_started", "state": state.to_client_state()})
+    asyncio.create_task(run_round_loop(room_id))
+
+
+async def run_round_loop(room_id: str) -> None:
+    """Uma rodada por volta: espera as duas escolhas (ou o tempo), resolve e dá tempo para a animação."""
+    await asyncio.sleep(2.2)  # entrada dos Encantados na arena
     while True:
-        await asyncio.sleep(random.uniform(1.2, 1.8))
         room = active_rooms.get(room_id)
-        if not room or room_id not in active_rooms:
-            break
+        if not room or room["closed"]:
+            return
         state: BattleState = room["state"]
         if state.phase != "BATTLE":
-            break
+            return
 
-        # Cooldown ticks
-        if state.p1_switch_cooldown > 0:
-            state.p1_switch_cooldown = max(0, state.p1_switch_cooldown - 1)
-        if state.p2_switch_cooldown > 0:
-            state.p2_switch_cooldown = max(0, state.p2_switch_cooldown - 1)
+        state.begin_round()
+        if state.is_bot:
+            state.choices[2] = state.bot_choose(2)
+        await broadcast_room(room_id, {"type": "round_start", "state": state.to_client_state()})
 
-        decision = state.bot_action_tick()
-        if not decision:
-            continue
+        waited = 0.0
+        while waited < ROUND_SECONDS and not state.both_ready() and state.phase == "BATTLE":
+            await asyncio.sleep(POLL_SECONDS)
+            waited += POLL_SECONDS
+        if room["closed"] or state.phase != "BATTLE":
+            return
 
-        act = decision.get("action")
-        if act == "resolve_charged":
-            res = state.resolve_charged_attack(use_shield=decision.get("use_shield", False))
-            await broadcast_room(room_id, {
-                "type": "charged_resolved",
-                "result": res,
-                "state": state.to_client_state(),
-            })
-        elif act == "fast_attack":
-            res = state.execute_fast_attack(2)
-            await broadcast_room(room_id, {
-                "type": "fast_attack_done",
-                "result": res,
-                "state": state.to_client_state(),
-            })
-        elif act == "charged_attack":
-            res = state.queue_charged_attack(2, move_slot=decision.get("slot", 1))
-            await broadcast_room(room_id, {
-                "type": "charged_prompt",
-                "pending": res,
-                "state": state.to_client_state(),
-            })
-        elif act == "switch":
-            res = state.switch_pokemon(2, decision.get("target_idx", 0))
-            await broadcast_room(room_id, {
-                "type": "switch_done",
-                "result": res,
-                "state": state.to_client_state(),
-            })
-
-        # Verifica se finalizou
+        events = state.resolve_round()
+        await broadcast_room(room_id, {"type": "round_result", "events": events,
+                                       "state": state.to_client_state()})
+        await asyncio.sleep(RESULT_PADDING + EVENT_SECONDS * len(events))
         if state.phase == "FINISHED":
-            finish_battle(room_id)
-            break
+            await finish_battle(room_id)
+            return
 
 
-def finish_battle(room_id: str):
+async def finish_battle(room_id: str) -> None:
     room = active_rooms.get(room_id)
-    if not room:
+    if not room or room["closed"]:
         return
+    room["closed"] = True
     state: BattleState = room["state"]
     state.phase = "FINISHED"
+    winner_id = {1: state.p1_id, 2: state.p2_id}.get(state.winner)
 
-    winner_id = None
-    if state.winner == 1:
-        winner_id = state.p1_id
-    elif state.winner == 2:
-        winner_id = state.p2_id
+    if state.round_no > 0 or state.winner:
+        try:
+            record_battle_result(
+                room_id=room_id,
+                player1_id=state.p1_id,
+                # contra IA o rating do treinador representado não muda
+                player2_id=None if state.is_bot else state.p2_id,
+                player1_name=state.p1_name, player2_name=state.p2_name,
+                winner_id=winner_id if not (state.is_bot and state.winner == 2) else -1,
+                p1_team=[c["name"] for c in state.teams[1]],
+                p2_team=[c["name"] for c in state.teams[2]],
+                turns_played=state.round_no,
+            )
+        except Exception:
+            log.exception("falha ao gravar o resultado da sala %s", room_id)
 
-    # Salva no SQLite
-    try:
-        record_battle_result(
-            room_id=room_id,
-            player1_id=state.p1_id,
-            player2_id=state.p2_id,
-            player1_name=state.p1_name,
-            player2_name=state.p2_name,
-            winner_id=winner_id,
-            p1_team=state.p1_combatants,
-            p2_team=state.p2_combatants,
-            turns_played=state.turns_played,
-        )
-    except Exception as e:
-        print(f"Erro ao salvar batalha no banco: {e}")
+    for uid in (state.p1_id, None if state.is_bot else state.p2_id):
+        if uid in online_users:
+            online_users[uid]["in_battle"] = False
+            online_users[uid]["room_id"] = None
+            online_users[uid]["user"] = get_user_by_id(uid) or online_users[uid]["user"]
 
-    asyncio.create_task(broadcast_room(room_id, {
+    await broadcast_room(room_id, {
         "type": "battle_ended",
         "winner": state.winner,
-        "winner_name": state.p1_name if state.winner == 1 else state.p2_name,
+        "winner_name": state.name_of(state.winner) if state.winner else None,
         "state": state.to_client_state(),
-        "log": f"🏆 Batalha encerrada! Vencedor: {state.p1_name if state.winner == 1 else state.p2_name}!",
-    }))
-
-    # Libera os usuários
-    if state.p1_id and state.p1_id in online_users:
-        online_users[state.p1_id]["in_battle"] = False
-        online_users[state.p1_id]["room_id"] = None
-    if state.p2_id and state.p2_id in online_users:
-        online_users[state.p2_id]["in_battle"] = False
-        online_users[state.p2_id]["room_id"] = None
-
-    asyncio.create_task(broadcast_lobby())
+    })
+    active_rooms.pop(room_id, None)
+    await broadcast_lobby()
 
 
-async def handle_ws_message(user_id: int, user: dict[str, Any], ws: WebSocket, data: dict[str, Any]):
+def _room_for(user_id: int, room_id: str | None) -> tuple[dict[str, Any], BattleState] | None:
+    """Só devolve a sala se o usuário for um dos participantes."""
+    room = active_rooms.get(room_id or "")
+    if not room:
+        return None
+    state: BattleState = room["state"]
+    if user_id not in (state.p1_id, None if state.is_bot else state.p2_id):
+        return None
+    return room, state
+
+
+def _find_target(data: dict[str, Any]) -> dict[str, Any] | None:
+    target_id = data.get("target_id")
+    username = (data.get("target_username") or "").strip()[:24]
+    try:
+        if target_id is not None:
+            return get_user_by_id(int(target_id))
+    except (TypeError, ValueError):
+        return None
+    return get_user_by_username(username) if username else None
+
+
+async def _start_bot_room(user: dict[str, Any], ws: WebSocket, opponent: dict[str, Any], prefix: str) -> None:
+    state = BattleState(room_id=f"{prefix}_{uuid.uuid4().hex[:10]}", p1_id=user["id"],
+                        p1_name=user["display_name"], p2_id=opponent.get("id"),
+                        p2_name=opponent["display_name"], is_bot=True)
+    state.team_ids[2] = auto_pick_team([])
+    state.locked[2] = True
+    _open_room(state, ws, None)
+    await _send(ws, {"type": "battle_matched", "room_id": state.room_id, "role": 1,
+                     "opponent": {**_public_user(opponent), "is_bot": True},
+                     "state": state.to_client_state()})
+    await broadcast_lobby()
+
+
+async def handle_ws_message(user_id: int, user: dict[str, Any], ws: WebSocket, data: dict[str, Any]) -> None:
     action = data.get("action")
+    if online_users.get(user_id, {}).get("in_battle") and action in (
+            "challenge", "challenge_offline_bot", "accept_challenge", "start_bot_battle"):
+        await _send(ws, {"type": "error", "message": "Termine o duelo atual antes de começar outro."})
+        return
 
-    # 1. Desafiar outro usuário online ou cadastrado
     if action == "challenge":
-        target_username = (data.get("target_username") or "").strip()
-        target_id = data.get("target_id")
-
-        target_db = None
-        if target_id:
-            target_db = get_user_by_id(int(target_id))
-        elif target_username:
-            target_db = get_user_by_username(target_username)
-
-        if not target_db:
-            await ws.send_text(json.dumps({
-                "type": "error",
-                "message": f"Treinador '{target_username or target_id}' não foi encontrado no cadastro.",
-            }, ensure_ascii=False))
-            return
-
-        if target_db["id"] == user_id:
-            await ws.send_text(json.dumps({
-                "type": "error",
-                "message": "Você não pode desafiar a si mesmo!",
-            }, ensure_ascii=False))
-            return
-
-        # Se o usuário cadastrado estiver online
-        if target_db["id"] in online_users:
-            target_status = online_users[target_db["id"]]
-            if target_status.get("in_battle"):
-                await ws.send_text(json.dumps({
-                    "type": "error",
-                    "message": f"{target_db['display_name']} já está em uma batalha no momento.",
-                }, ensure_ascii=False))
-                return
-
-            invite_id = str(uuid.uuid4())[:8]
-            pending_invites[invite_id] = {
-                "from_user": user,
-                "to_user": target_db,
-            }
-
-            # Notifica o desafiado
-            await send_to_user(target_db["id"], {
-                "type": "challenge_received",
-                "invite_id": invite_id,
-                "challenger": {
-                    "id": user["id"],
-                    "username": user["username"],
-                    "display_name": user["display_name"],
-                    "avatar_id": user["avatar_id"],
-                    "rating": user["rating"],
-                },
-                "timeout": 30,
-            })
-
-            await ws.send_text(json.dumps({
-                "type": "challenge_sent",
-                "target": target_db["display_name"],
-                "invite_id": invite_id,
-            }, ensure_ascii=False))
+        target = _find_target(data)
+        if not target:
+            await _send(ws, {"type": "error", "message": "Treinador não encontrado. Confira o nome de usuário."})
+        elif target["id"] == user_id:
+            await _send(ws, {"type": "error", "message": "Você não pode desafiar a si mesmo."})
+        elif target["id"] not in online_users:
+            await _send(ws, {"type": "trainer_offline_prompt", "target": _public_user(target)})
+        elif online_users[target["id"]].get("in_battle"):
+            await _send(ws, {"type": "error", "message": f"{target['display_name']} está em um duelo agora."})
         else:
-            # Usuário cadastrado está offline no momento! Notifica para permitir batalha vs IA de seu perfil
-            await ws.send_text(json.dumps({
-                "type": "trainer_offline_prompt",
-                "target": {
-                    "id": target_db["id"],
-                    "username": target_db["username"],
-                    "display_name": target_db["display_name"],
-                    "avatar_id": target_db["avatar_id"],
-                    "rating": target_db["rating"],
-                },
-                "message": f"Treinador '{target_db['display_name']}' está offline no momento.",
-            }, ensure_ascii=False))
+            invite_id = uuid.uuid4().hex[:8]
+            pending_invites[invite_id] = {"from_user": user, "to_user": target}
+            await send_to_user(target["id"], {"type": "challenge_received", "invite_id": invite_id,
+                                              "challenger": _public_user(user), "timeout": 30})
+            await _send(ws, {"type": "challenge_sent", "target": target["display_name"]})
 
-    # 1.1 Desafiar perfil de treinador offline (IA representa o treinador)
     elif action == "challenge_offline_bot":
-        target_id = data.get("target_id")
-        target_username = (data.get("target_username") or "").strip()
-        target_db = None
-        if target_id:
-            target_db = get_user_by_id(int(target_id))
-        elif target_username:
-            target_db = get_user_by_username(target_username)
-
-        bot_name = target_db["display_name"] if target_db else (target_username or "Treinador")
-        bot_avatar = target_db["avatar_id"] if target_db else 25
-        bot_rating = target_db["rating"] if target_db else 1000
-
-        room_id = f"ghost_{uuid.uuid4().hex[:10]}"
-        state = BattleState(
-            room_id=room_id,
-            p1_id=user["id"],
-            p1_name=user["display_name"],
-            p2_id=target_db["id"] if target_db else None,
-            p2_name=bot_name,
-            is_bot=True,
-        )
-
-        state.p2_team_ids = auto_pick_team([])
-        state.p2_locked = True
-
-        active_rooms[room_id] = {
-            "state": state,
-            "p1_ws": ws,
-            "p2_ws": None,
-            "task": None,
-        }
-
-        online_users[user["id"]]["in_battle"] = True
-        online_users[user["id"]]["room_id"] = room_id
-
-        await ws.send_text(json.dumps({
-            "type": "battle_matched",
-            "room_id": room_id,
-            "role": 1,
-            "opponent": {
-                "display_name": bot_name,
-                "username": target_db["username"] if target_db else "",
-                "rating": bot_rating,
-                "avatar_id": bot_avatar,
-                "is_bot": True,
-            },
-            "state": state.to_client_state(for_player=1),
-        }, ensure_ascii=False))
-
-        active_rooms[room_id]["task"] = asyncio.create_task(run_draft_timer(room_id))
-        await broadcast_lobby()
-
-    # 2. Aceitar desafio
-    elif action == "accept_challenge":
-        invite_id = data.get("invite_id")
-        inv = pending_invites.pop(invite_id, None)
-        if not inv:
-            await ws.send_text(json.dumps({"type": "error", "message": "Convite expirado ou não encontrado."}))
+        target = _find_target(data)
+        if not target:
+            await _send(ws, {"type": "error", "message": "Treinador não encontrado."})
             return
+        await _start_bot_room(user, ws, target, "eco")
 
-        p1_u = inv["from_user"]
-        p2_u = inv["to_user"]
-
-        if p1_u["id"] not in online_users or p2_u["id"] not in online_users:
-            await ws.send_text(json.dumps({"type": "error", "message": "Um dos jogadores se desconectou."}))
-            return
-
-        room_id = f"room_{uuid.uuid4().hex[:10]}"
-        state = BattleState(
-            room_id=room_id,
-            p1_id=p1_u["id"],
-            p1_name=p1_u["display_name"],
-            p2_id=p2_u["id"],
-            p2_name=p2_u["display_name"],
-            is_bot=False,
-        )
-
-        active_rooms[room_id] = {
-            "state": state,
-            "p1_ws": online_users[p1_u["id"]]["ws"],
-            "p2_ws": online_users[p2_u["id"]]["ws"],
-            "task": None,
-        }
-
-        online_users[p1_u["id"]]["in_battle"] = True
-        online_users[p1_u["id"]]["room_id"] = room_id
-        online_users[p2_u["id"]]["in_battle"] = True
-        online_users[p2_u["id"]]["room_id"] = room_id
-
-        # Inicia a sala de seleção sincronizada
-        await send_to_user(p1_u["id"], {
-            "type": "battle_matched",
-            "room_id": room_id,
-            "role": 1,
-            "opponent": p2_u,
-            "state": state.to_client_state(for_player=1),
-        })
-        await send_to_user(p2_u["id"], {
-            "type": "battle_matched",
-            "room_id": room_id,
-            "role": 2,
-            "opponent": p1_u,
-            "state": state.to_client_state(for_player=2),
-        })
-
-        active_rooms[room_id]["task"] = asyncio.create_task(run_draft_timer(room_id))
-        await broadcast_lobby()
-
-    # 3. Recusar desafio
-    elif action == "decline_challenge":
-        invite_id = data.get("invite_id")
-        inv = pending_invites.pop(invite_id, None)
-        if inv:
-            await send_to_user(inv["from_user"]["id"], {
-                "type": "challenge_declined",
-                "by": user["display_name"],
-            })
-
-    # 4. Iniciar Batalha contra Bot (Treino IA)
     elif action == "start_bot_battle":
-        room_id = f"bot_{uuid.uuid4().hex[:10]}"
-        bot_name = random.choice(BOT_NAMES)
-        state = BattleState(
-            room_id=room_id,
-            p1_id=user["id"],
-            p1_name=user["display_name"],
-            p2_id=None,
-            p2_name=bot_name,
-            is_bot=True,
-        )
+        bot = {"id": None, "username": "", "display_name": random.choice(BOT_NAMES),
+               "avatar_id": random.randint(1, 20), "rating": 1000}
+        await _start_bot_room(user, ws, bot, "treino")
 
-        # Bot já escolhe 3 Pokémon equilibrados automaticamente
-        state.p2_team_ids = auto_pick_team([])
-        state.p2_locked = True
-
-        active_rooms[room_id] = {
-            "state": state,
-            "p1_ws": ws,
-            "p2_ws": None,
-            "task": None,
-        }
-
-        online_users[user["id"]]["in_battle"] = True
-        online_users[user["id"]]["room_id"] = room_id
-
-        await ws.send_text(json.dumps({
-            "type": "battle_matched",
-            "room_id": room_id,
-            "role": 1,
-            "opponent": {"display_name": bot_name, "rating": 1000, "avatar_id": 25, "is_bot": True},
-            "state": state.to_client_state(for_player=1),
-        }, ensure_ascii=False))
-
-        active_rooms[room_id]["task"] = asyncio.create_task(run_draft_timer(room_id))
+    elif action == "accept_challenge":
+        inv = pending_invites.pop(data.get("invite_id"), None)
+        if not inv or inv["to_user"]["id"] != user_id:
+            await _send(ws, {"type": "error", "message": "O convite expirou."})
+            return
+        p1, p2 = inv["from_user"], inv["to_user"]
+        if p1["id"] not in online_users or online_users[p1["id"]].get("in_battle"):
+            await _send(ws, {"type": "error", "message": f"{p1['display_name']} não está mais disponível."})
+            return
+        state = BattleState(room_id=f"sala_{uuid.uuid4().hex[:10]}", p1_id=p1["id"], p1_name=p1["display_name"],
+                            p2_id=p2["id"], p2_name=p2["display_name"])
+        _open_room(state, online_users[p1["id"]]["ws"], ws)
+        for role, me, foe in ((1, p1, p2), (2, p2, p1)):
+            await send_to_user(me["id"], {"type": "battle_matched", "room_id": state.room_id, "role": role,
+                                          "opponent": _public_user(foe), "state": state.to_client_state()})
         await broadcast_lobby()
 
-    # 5. Escolha / Draft de Pokémon (dentro dos 60 segundos)
+    elif action == "decline_challenge":
+        inv = pending_invites.pop(data.get("invite_id"), None)
+        if inv and inv["to_user"]["id"] == user_id:
+            await send_to_user(inv["from_user"]["id"], {"type": "challenge_declined", "by": user["display_name"]})
+
     elif action == "draft_update":
-        room_id = data.get("room_id")
-        team_ids = [int(x) for x in data.get("team_ids", [])][:3]
-        locked = bool(data.get("locked", False))
-
-        room = active_rooms.get(room_id)
-        if not room:
+        found = _room_for(user_id, data.get("room_id"))
+        if not found or found[1].phase != "DRAFT":
             return
-        state: BattleState = room["state"]
-        if state.phase != "DRAFT":
+        _, state = found
+        try:
+            team_ids = [int(x) for x in (data.get("team_ids") or [])]
+        except (TypeError, ValueError):
             return
-
-        # Valida limite de stamina
-        total_stamina = sum(calculate_pokemon_stamina(POKEMON_MAP[pid]) for pid in team_ids if pid in POKEMON_MAP)
-        if total_stamina > TEAM_STAMINA_LIMIT:
-            await ws.send_text(json.dumps({
-                "type": "error",
-                "message": f"Stamina total ({total_stamina}) excedeu o limite máximo de {TEAM_STAMINA_LIMIT} SP!",
-            }, ensure_ascii=False))
+        error = validate_team(team_ids)
+        if error:
+            await _send(ws, {"type": "error", "message": error})
             return
-
-        is_p1 = (state.p1_id == user_id)
-        if is_p1:
-            state.p1_team_ids = team_ids
-            state.p1_locked = locked
-        else:
-            state.p2_team_ids = team_ids
-            state.p2_locked = locked
-
-        await broadcast_room(room_id, {
+        player = state.player_of(user_id)
+        state.team_ids[player] = team_ids
+        state.locked[player] = bool(data.get("locked")) and len(team_ids) > 0
+        await broadcast_room(state.room_id, {
             "type": "draft_updated",
-            "p1_team_ids": state.p1_team_ids,
-            "p2_team_ids": state.p2_team_ids,
-            "p1_locked": state.p1_locked,
-            "p2_locked": state.p2_locked,
+            "p1_locked": state.locked[1], "p2_locked": state.locked[2],
+            "p1_count": len(state.team_ids[1]), "p2_count": len(state.team_ids[2]),
         })
+        if state.locked[1] and state.locked[2]:
+            await start_battle(state.room_id)
 
-        # Se ambos travaram antes dos 60s
-        if state.p1_locked and state.p2_locked:
-            state.start_battle_from_draft()
-            await broadcast_room(room_id, {
-                "type": "battle_started",
-                "state": state.to_client_state(),
-                "log": "⚔️ Ambos os treinadores confirmaram! O combate começou!",
-            })
-            if state.is_bot:
-                asyncio.create_task(run_bot_loop(room_id))
-
-    # 6. Ataque Rápido
-    elif action == "fast_attack":
-        room_id = data.get("room_id")
-        room = active_rooms.get(room_id)
-        if not room:
+    elif action == "choose_action":
+        found = _room_for(user_id, data.get("room_id"))
+        if not found:
             return
-        state: BattleState = room["state"]
-        player_num = 1 if state.p1_id == user_id else 2
-
-        res = state.execute_fast_attack(player_num)
-        if res.get("ok"):
-            await broadcast_room(room_id, {
-                "type": "fast_attack_done",
-                "result": res,
-                "state": state.to_client_state(),
-            })
-            if state.phase == "FINISHED":
-                finish_battle(room_id)
-
-    # 7. Disparar Ataque Carregado
-    elif action == "charged_attack":
-        room_id = data.get("room_id")
-        slot = int(data.get("slot", 1))
-        room = active_rooms.get(room_id)
-        if not room:
+        _, state = found
+        player = state.player_of(user_id)
+        res = state.submit_action(player, data)
+        if not res["ok"]:
+            await _send(ws, {"type": "action_rejected", "message": res["reason"]})
             return
-        state: BattleState = room["state"]
-        player_num = 1 if state.p1_id == user_id else 2
+        await broadcast_room(state.room_id, {"type": "ready_update",
+                                             "p1_ready": state.choices[1] is not None,
+                                             "p2_ready": state.choices[2] is not None})
 
-        res = state.queue_charged_attack(player_num, slot)
-        if res.get("ok"):
-            await broadcast_room(room_id, {
-                "type": "charged_prompt",
-                "pending": res,
-                "state": state.to_client_state(),
-            })
-
-    # 8. Decisão de Usar Escudo
-    elif action == "resolve_shield":
-        room_id = data.get("room_id")
-        use_shield = bool(data.get("use_shield", False))
-        room = active_rooms.get(room_id)
-        if not room:
-            return
-        state: BattleState = room["state"]
-
-        res = state.resolve_charged_attack(use_shield=use_shield)
-        if res.get("ok"):
-            await broadcast_room(room_id, {
-                "type": "charged_resolved",
-                "result": res,
-                "state": state.to_client_state(),
-            })
-            if state.phase == "FINISHED":
-                finish_battle(room_id)
-
-    # 9. Trocar Pokémon em campo
-    elif action == "switch_pokemon":
-        room_id = data.get("room_id")
-        target_idx = int(data.get("target_idx", 0))
-        room = active_rooms.get(room_id)
-        if not room:
-            return
-        state: BattleState = room["state"]
-        player_num = 1 if state.p1_id == user_id else 2
-
-        res = state.switch_pokemon(player_num, target_idx)
-        if res.get("ok"):
-            await broadcast_room(room_id, {
-                "type": "switch_done",
-                "result": res,
-                "state": state.to_client_state(),
-            })
-
-    # 10. Desistir / Render-se
     elif action == "surrender":
-        room_id = data.get("room_id")
-        room = active_rooms.get(room_id)
-        if not room:
+        found = _room_for(user_id, data.get("room_id"))
+        if not found:
             return
-        state: BattleState = room["state"]
-        player_num = 1 if state.p1_id == user_id else 2
-        state.winner = 2 if player_num == 1 else 1
-        state.phase = "FINISHED"
-        state.logs.append(f"🏳️ {state.p1_name if player_num == 1 else state.p2_name} desistiu da partida.")
-        finish_battle(room_id)
+        _, state = found
+        state.winner = 3 - state.player_of(user_id)
+        state.logs.append(f"{user['display_name']} desistiu do duelo.")
+        await finish_battle(state.room_id)
 
 
-# ==================== WEBSOCKET ROUTE ====================
+# ==================== rota WebSocket ====================
 
 
 async def websocket_battle_endpoint(websocket: WebSocket, token: str = ""):
     await websocket.accept()
     user = get_user_by_token(token)
     if not user:
-        await websocket.send_text(json.dumps({
-            "type": "auth_error",
-            "message": "Autenticação necessária. Faça login de Treinador.",
-        }, ensure_ascii=False))
+        await _send(websocket, {"type": "auth_error", "message": "Entre com sua conta de treinador."})
         await websocket.close()
         return
 
     user_id = user["id"]
-    online_users[user_id] = {
-        "ws": websocket,
-        "user": user,
-        "in_battle": False,
-        "room_id": None,
-    }
-
-    # Confirma conexão e envia dados do perfil
-    await websocket.send_text(json.dumps({
-        "type": "auth_success",
-        "user": user,
-        "stamina_limit": TEAM_STAMINA_LIMIT,
-    }, ensure_ascii=False))
-
+    previous = online_users.get(user_id)
+    if previous:  # mesma conta aberta em outra aba: a conexão antiga é encerrada
+        await _send(previous["ws"], {"type": "auth_error", "message": "Sua conta foi aberta em outro lugar."})
+    online_users[user_id] = {"ws": websocket, "user": user, "in_battle": False, "room_id": None}
+    await _send(websocket, {"type": "auth_success", "user": user})
     await broadcast_lobby()
 
     try:
@@ -750,25 +434,22 @@ async def websocket_battle_endpoint(websocket: WebSocket, token: str = ""):
             raw = await websocket.receive_text()
             try:
                 data = json.loads(raw)
-            except Exception:
+            except ValueError:
                 continue
-            await handle_ws_message(user_id, user, websocket, data)
+            if isinstance(data, dict):
+                await handle_ws_message(user_id, user, websocket, data)
     except WebSocketDisconnect:
         pass
-    except Exception as e:
-        print(f"WS error user {user_id}: {e}")
+    except Exception:
+        log.exception("erro no WebSocket do usuário %s", user_id)
     finally:
-        # Limpeza ao desconectar
-        data = online_users.pop(user_id, None)
-        if data and data.get("room_id"):
-            room_id = data["room_id"]
-            room = active_rooms.get(room_id)
-            if room:
-                state: BattleState = room["state"]
-                if state.phase != "FINISHED":
-                    state.winner = 2 if state.p1_id == user_id else 1
-                    state.phase = "FINISHED"
-                    state.logs.append(f"🔌 {user['display_name']} desconectou-se da partida.")
-                    finish_battle(room_id)
-        await broadcast_lobby()
-
+        current = online_users.get(user_id)
+        if current and current["ws"] is websocket:
+            online_users.pop(user_id, None)
+            found = _room_for(user_id, current.get("room_id"))
+            if found and found[1].phase != "FINISHED":
+                state = found[1]
+                state.winner = 3 - state.player_of(user_id)
+                state.logs.append(f"{user['display_name']} saiu do duelo.")
+                await finish_battle(state.room_id)
+            await broadcast_lobby()

@@ -72,3 +72,22 @@ run.py                 inicia o servidor (--https opcional)
 - O modelo foi treinado com artes oficiais/anime: funciona melhor com desenhos, cartas e telas.
 - Também dá para **enviar uma foto** ou **colar uma imagem (Ctrl+V)**.
 
+
+---
+
+## Duelo dos Encantados (aba "Duelo")
+
+Jogo original de duelos por rodadas, com criaturas, elementos e regras próprios.
+
+- **Trio e orçamento:** escolha 3 dos 20 Encantados gastando até 10 pontos (draft de 60 s).
+- **Rodadas simultâneas:** a cada rodada (20 s) os dois jogadores escolhem em segredo entre **Golpe**, **Técnica** (3 de Foco, com efeito próprio), **Guarda** e **Trocar**; o servidor resolve e o cliente anima evento por evento.
+- **Cinco elementos:** Brasa, Mata, Maré, Pedra e Vento; cada um leva vantagem sobre dois e desvantagem contra dois.
+- **Modos:** treino contra a IA, desafio a outro treinador conectado ou ao "eco" (IA) de um treinador desconectado. Ranking e histórico em SQLite (`data/battle.db`).
+- **Arena 3D:** `web/battle3d.js` usa Three.js r128 (carregado do cdnjs) com criaturas procedurais e shaders próprios. Sem WebGL ou sem acesso ao CDN, a arena cai automaticamente para uma versão 2D em SVG.
+
+| Arquivo | Papel |
+|---|---|
+| `app/battle_engine.py` | Elenco, regras, resolução de rodada e IA |
+| `app/battle_server.py` | REST (`/api/battle/*`) e WebSocket (`/ws/battle`) |
+| `web/battle.js` | Salão, draft, HUD, narração e notificações |
+| `web/battle3d.js` | Cena, modelos, partículas e efeitos |
