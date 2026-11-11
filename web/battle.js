@@ -580,6 +580,7 @@
       setCooldowns(msg.cooldowns || {});
       renderCooldownBanner();
     },
+    battle_chat(msg) { showChatBubble(msg); },
     auth_error(msg) { toast("Sessão encerrada", msg.message, "error"); logout(); },
     error(msg) { toast("Não foi possível", msg.message, "error"); },
     lobby_update(msg) { if (S.user) renderTrainers(msg.trainers); },
@@ -619,6 +620,7 @@
       enqueue(async () => {
         S.game = msg.state; S.chosen = null;
         $("#ticker").innerHTML = ""; $("#floats").innerHTML = "";
+        if ($("#chatBubbles")) $("#chatBubbles").innerHTML = "";
         buildPlate("me"); buildPlate("foe");
         updatePlate("me", S.game); updatePlate("foe", S.game);
         $("#roundChip").textContent = "Preparar";
@@ -752,6 +754,17 @@
 
     $("#actions").addEventListener("click", (e) => { sfx("unlock"); const b = e.target.closest(".act"); if (b && !b.disabled) { sfx("playSfx", "click"); choose({ kind: b.dataset.kind }); } });
     $("#bench").addEventListener("click", (e) => { sfx("unlock"); const b = e.target.closest("[data-switch]"); if (b && !b.disabled) { sfx("playSfx", "click"); choose({ kind: "trocar", idx: Number(b.dataset.switch) }); } });
+    if ($("#quickChat")) $("#quickChat").addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-emoji], [data-text]");
+      if (!btn || !S.roomId) return;
+      sfx("unlock");
+      sfx("playSfx", "click");
+      send("battle_chat", {
+        room_id: S.roomId,
+        emoji: btn.dataset.emoji || "",
+        text: btn.dataset.text || "",
+      });
+    });
     if ($("#btnAudioToggle")) $("#btnAudioToggle").addEventListener("click", () => {
       sfx("unlock");
       const next = !(window.BattleAudio?.isSfxEnabled?.() ?? true);
@@ -783,6 +796,18 @@
       } catch (_) { logout(); }
     });
     $("#duelResult").addEventListener("cancel", (e) => e.preventDefault());
+  }
+  function showChatBubble(msg) {
+    const host = $("#chatBubbles");
+    if (!host) return;
+    const isMe = msg.from_player === S.role;
+    host.querySelectorAll(`.chat-bubble.${isMe ? "me" : "foe"}`).forEach((n) => n.remove());
+    const el = document.createElement("div");
+    el.className = `chat-bubble ${isMe ? "me" : "foe"}`;
+    el.innerHTML = `${msg.emoji ? `<span class="cb-emoji">${esc(msg.emoji)}</span>` : ""}<span><span class="cb-who">${esc(msg.from_name || (isMe ? "Você" : "Oponente"))}</span>${esc(msg.text || "")}</span>`;
+    host.appendChild(el);
+    if (!isMe) sfx("playSfx", "click");
+    setTimeout(() => el.remove(), 3300);
   }
   function updateAudioButtons() {
     const sfxOn = window.BattleAudio?.isSfxEnabled?.() ?? true;

@@ -56,6 +56,30 @@
 .pick .ko-badge { position: absolute; bottom: 6px; right: 8px; font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 999px; background: #5e221d; color: #ffd4cf; }
 .arena-tools { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .arena-tools .btn.off { opacity: .52; }
+.chat-bubbles { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
+.chat-bubble { position: absolute; max-width: min(68%, 260px); padding: 7px 12px; border-radius: 14px; font-size: 13px; font-weight: 700;
+  color: #fff; background: #0a1513eb; border: 1px solid var(--ember); box-shadow: 0 10px 24px #000a;
+  display: inline-flex; align-items: center; gap: 6px; animation: bubble-pop 3.2s var(--ease-out) forwards; }
+.chat-bubble.me { bottom: 106px; left: 12px; border-bottom-left-radius: 4px; border-color: #69f0ae; }
+.chat-bubble.foe { top: 106px; right: 12px; border-top-right-radius: 4px; border-color: var(--ember); }
+.chat-bubble .cb-emoji { font-size: 18px; line-height: 1; }
+.chat-bubble .cb-who { font-size: 10px; font-weight: 800; color: var(--fg-soft); display: block; line-height: 1.1; }
+@keyframes bubble-pop {
+  0% { opacity: 0; transform: translateY(10px) scale(.75); }
+  10% { opacity: 1; transform: translateY(0) scale(1.04); }
+  18% { transform: translateY(0) scale(1); }
+  82% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-10px) scale(.94); }
+}
+.quick-chat { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+  margin-top: 10px; padding-top: 10px; border-top: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
+.quick-emojis, .quick-msgs { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
+.qc-emoji, .qc-msg { border: 1px solid var(--line); background: #0a1513; color: var(--fg); border-radius: 999px; cursor: pointer;
+  transition: transform .1s, border-color .15s, background .15s; }
+.qc-emoji { width: 34px; height: 34px; font-size: 17px; display: grid; place-items: center; padding: 0; }
+.qc-msg { min-height: 32px; padding: 4px 10px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.qc-emoji:hover, .qc-msg:hover { border-color: var(--ember); background: var(--night-3); transform: translateY(-1px); }
+.qc-emoji:active, .qc-msg:active { transform: scale(.94); }
 
 #view-battle.active { display: block; }
 .duel { color: var(--fg); background: var(--night); border-radius: var(--radius); padding: 12px; border: 3px solid #333; min-height: 420px; }

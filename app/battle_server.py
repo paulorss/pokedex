@@ -332,6 +332,32 @@ async def _start_bot_room(user: dict[str, Any], ws: WebSocket, opponent: dict[st
     await broadcast_lobby()
 
 
+BOT_REPLIES = [
+    ("⚡", "Boa jogada!"),
+    ("🔥", "Vamos com tudo!"),
+    ("😎", "Essa foi por pouco!"),
+    ("👏", "Excelente ataque!"),
+    ("🛡️", "Defesa sólida!"),
+    ("👍", "Boa sorte, treinador!"),
+]
+_last_chat_at: dict[int, float] = {}
+
+
+async def _bot_chat_reply(room_id: str, bot_name: str) -> None:
+    await asyncio.sleep(1.0)
+    room = active_rooms.get(room_id)
+    if not room or room["closed"]:
+        return
+    emoji, text = random.choice(BOT_REPLIES)
+    await broadcast_room(room_id, {
+        "type": "battle_chat",
+        "from_player": 2,
+        "from_name": bot_name,
+        "emoji": emoji,
+        "text": text,
+    })
+
+
 async def handle_ws_message(user_id: int, user: dict[str, Any], ws: WebSocket, data: dict[str, Any]) -> None:
     action = data.get("action")
     if online_users.get(user_id, {}).get("in_battle") and action in (
@@ -432,6 +458,29 @@ async def handle_ws_message(user_id: int, user: dict[str, Any], ws: WebSocket, d
         await broadcast_room(state.room_id, {"type": "ready_update",
                                              "p1_ready": state.choices[1] is not None,
                                              "p2_ready": state.choices[2] is not None})
+
+    elif action == "battle_chat":
+        found = _room_for(user_id, data.get("room_id"))
+        if not found:
+            return
+        _, state = found
+        now = asyncio.get_running_loop().time()
+        if now - _last_chat_at.get(user_id, 0.0) < 0.4:
+            return
+        _last_chat_at[user_id] = now
+        emoji = str(data.get("emoji") or "").strip()[:8]
+        text = str(data.get("text") or "").strip()[:64]
+        if not emoji and not text:
+            return
+        await broadcast_room(state.room_id, {
+            "type": "battle_chat",
+            "from_player": state.player_of(user_id),
+            "from_name": user["display_name"],
+            "emoji": emoji,
+            "text": text,
+        })
+        if state.is_bot and random.random() < 0.7:
+            asyncio.create_task(_bot_chat_reply(state.room_id, state.p2_name))
 
     elif action == "surrender":
         found = _room_for(user_id, data.get("room_id"))

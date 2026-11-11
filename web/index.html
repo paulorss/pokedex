@@ -230,6 +230,7 @@
               <div class="plate me" id="plateMe"></div>
               <div class="round-chip" id="roundChip"></div>
               <div class="announcer" id="announcer" aria-live="assertive"></div>
+              <div class="chat-bubbles" id="chatBubbles" aria-live="polite"></div>
               <div class="floats" id="floats" aria-hidden="true"></div>
             </div>
             <div class="duel-panel controls-panel">
@@ -241,6 +242,25 @@
                 <button class="act" data-kind="guarda"><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg><b>Guarda</b><small>Amortece, +2 Foco</small></button>
               </div>
               <div class="bench" id="bench" aria-label="Trocar de Pokémon"></div>
+              <div class="quick-chat" id="quickChat" aria-label="Enviar emojis e mensagens rápidas">
+                <div class="quick-emojis">
+                  <button type="button" class="qc-emoji" data-emoji="🔥" title="Fogo!">🔥</button>
+                  <button type="button" class="qc-emoji" data-emoji="⚡" title="Choque!">⚡</button>
+                  <button type="button" class="qc-emoji" data-emoji="😎" title="Tranquilo">😎</button>
+                  <button type="button" class="qc-emoji" data-emoji="😱" title="Eita!">😱</button>
+                  <button type="button" class="qc-emoji" data-emoji="😂" title="Haha">😂</button>
+                  <button type="button" class="qc-emoji" data-emoji="👏" title="Palmas">👏</button>
+                  <button type="button" class="qc-emoji" data-emoji="💀" title="Nocaute">💀</button>
+                  <button type="button" class="qc-emoji" data-emoji="❤️" title="GG">❤️</button>
+                </div>
+                <div class="quick-msgs">
+                  <button type="button" class="qc-msg" data-emoji="👍" data-text="Boa jogada!">👍 Boa jogada!</button>
+                  <button type="button" class="qc-msg" data-emoji="🔥" data-text="Vamos nessa!">🔥 Vamos nessa!</button>
+                  <button type="button" class="qc-msg" data-emoji="⚡" data-text="Super eficaz!">⚡ Super eficaz!</button>
+                  <button type="button" class="qc-msg" data-emoji="😅" data-text="Por pouco!">😅 Por pouco!</button>
+                  <button type="button" class="qc-msg" data-emoji="🤝" data-text="Bom duelo!">🤝 Bom duelo!</button>
+                </div>
+              </div>
               <div class="arena-foot">
                 <ol class="ticker" id="ticker" aria-label="Narração"></ol>
                 <div class="arena-tools">
