@@ -10,6 +10,7 @@
   <title>Pokédex Local</title>
   <link rel="icon" href="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png" />
   <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="battle.css" />
 </head>
 <body>
   <div class="pokedex">
@@ -21,6 +22,7 @@
       <nav class="tabs">
         <button class="tab active" data-view="scanner">📷 Scanner</button>
         <button class="tab" data-view="browse">📖 Pokédex</button>
+        <button class="tab" data-view="battle">⚔️ Batalha</button>
         <button class="tab" id="btnLock" style="display:none" title="Bloquear Pokédex">🔒</button>
       </nav>
     </header>
@@ -90,6 +92,307 @@
         </div>
         <div id="grid" class="grid"></div>
       </section>
+
+      <!-- ===== Batalha Pokémon Online ===== -->
+      <section id="view-battle" class="view">
+        <div class="battle-container">
+          
+          <!-- 1. Tela de Login / Cadastro do Treinador -->
+          <div id="battleAuth" class="battle-auth-card" style="display:none">
+            <div class="big-lens" style="margin: 0 auto 10px;"><div class="glow"></div></div>
+            <h2>⚔️ Liga Pokémon Online</h2>
+            <p>Cadastre seu nome de usuário e senha pessoal para desafiar outros treinadores e subir no ranking!</p>
+            
+            <div class="auth-tabs">
+              <button id="tabLogin" class="auth-tab active">Entrar</button>
+              <button id="tabRegister" class="auth-tab">Novo Treinador</button>
+            </div>
+
+            <!-- Login -->
+            <form id="formLogin">
+              <div class="form-group">
+                <label>Nome de Usuário:</label>
+                <input type="text" id="loginUsername" class="form-input" placeholder="Seu usuário..." required autocomplete="username" />
+              </div>
+              <div class="form-group">
+                <label>Senha Pessoal:</label>
+                <input type="password" id="loginPassword" class="form-input" placeholder="Sua senha..." required autocomplete="current-password" />
+              </div>
+              <button type="submit" class="btn shoot" style="width:100%;margin-top:10px">Entrar na Arena</button>
+            </form>
+
+            <!-- Cadastro -->
+            <form id="formRegister" style="display:none">
+              <div class="form-group">
+                <label>Nome de Usuário (Único): *</label>
+                <input type="text" id="regUsername" class="form-input" placeholder="Ex: red, ash_ketchum, mistyleader" required autocomplete="username" />
+              </div>
+              <div class="form-group">
+                <label>Nome de Exibição / Apelido:</label>
+                <input type="text" id="regDisplayName" class="form-input" placeholder="Ex: Mestre Ash, Gary..." />
+              </div>
+              <div class="form-group">
+                <label>Senha Pessoal: *</label>
+                <input type="password" id="regPassword" class="form-input" placeholder="Mínimo 4 caracteres..." required autocomplete="new-password" />
+              </div>
+              <div class="form-group">
+                <label>Escolha seu Avatar de Treinador:</label>
+                <div class="avatar-picker">
+                  <div class="avatar-opt selected" data-avatar="25"><img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png" alt="Pikachu" /></div>
+                  <div class="avatar-opt" data-avatar="6"><img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/6.png" alt="Charizard" /></div>
+                  <div class="avatar-opt" data-avatar="9"><img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/9.png" alt="Blastoise" /></div>
+                  <div class="avatar-opt" data-avatar="3"><img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/3.png" alt="Venusaur" /></div>
+                  <div class="avatar-opt" data-avatar="94"><img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/94.png" alt="Gengar" /></div>
+                  <div class="avatar-opt" data-avatar="448"><img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/448.png" alt="Lucario" /></div>
+                </div>
+                <input type="hidden" id="regAvatarInput" value="25" />
+              </div>
+              <button type="submit" class="btn shoot" style="width:100%;margin-top:10px">Cadastrar e Jogar</button>
+            </form>
+
+            <div id="authStatusMsg" style="margin-top:10px;font-size:13px;font-weight:700;color:#d32f2f"></div>
+          </div>
+
+          <!-- 2. Lobby do Salão de Batalha -->
+          <div id="battleLobby" style="display:none">
+            <div class="lobby-grid">
+              
+              <!-- Coluna da Esquerda: Perfil e Ações Rápidas -->
+              <div>
+                <div class="trainer-card">
+                  <div class="trainer-avatar">
+                    <img id="trainerAvatar" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png" alt="" />
+                  </div>
+                  <div class="trainer-info">
+                    <h3 id="trainerName">Treinador</h3>
+                    <div id="trainerUsername" style="font-size:12px;color:#666;margin-bottom:4px">@usuario</div>
+                    <span id="trainerRating" class="trainer-rating">🏆 1000 PTS</span>
+                    <div class="trainer-stats">
+                      <span id="trainerWins" style="color:#2e7d32;font-weight:700">0 V</span>
+                      <span>•</span>
+                      <span id="trainerLosses" style="color:#c62828;font-weight:700">0 D</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="quick-match-box">
+                  <button id="btnQuickBot" class="btn-bot">🤖 Treinar contra IA / Bot Treinador</button>
+                  <p style="font-size:11px;color:#fff;margin:8px 0 0">Treine agora mesmo contra a inteligência artificial para testar sua estratégia!</p>
+                </div>
+
+                <div class="quick-match-box" style="text-align:left">
+                  <div style="font-weight:800;font-size:13px;color:#fff">Desafiar Treinador por Nome/ID:</div>
+                  <div class="challenge-input-box">
+                    <input type="text" id="challengeDirectInput" placeholder="Ex: ash_ketchum, mistyleader..." />
+                    <button id="btnChallengeDirect" class="btn-challenge" style="padding:10px 14px">Convidar</button>
+                  </div>
+                </div>
+
+                <button id="btnLogoutTrainer" class="btn" style="width:100%;background:#37474f">🚪 Sair da Conta</button>
+              </div>
+
+              <!-- Coluna da Direita: Treinadores Online e Ranking -->
+              <div>
+                <div class="online-list">
+                  <h4>
+                    <span>🌐 Treinadores Online no Lobby</span>
+                    <span style="font-size:11px;color:#666">Tempo Real</span>
+                  </h4>
+                  <div id="onlineTrainersList">
+                    <div style="text-align:center;color:#666;font-size:13px;padding:12px">Carregando treinadores online...</div>
+                  </div>
+                </div>
+
+                <div class="leaderboard-list">
+                  <h4>
+                    <span>🏆 Ranking da Liga Pokémon (Top Treinadores)</span>
+                    <span style="font-size:11px;color:#666">Pontuação ELO</span>
+                  </h4>
+                  <div id="leaderboardRows">
+                    <div style="text-align:center;color:#666;font-size:13px;padding:12px">Carregando ranking...</div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- 3. Sala de Escolha (Draft Room - 60 Segundos) -->
+          <div id="battleDraft" style="display:none">
+            <div class="draft-card">
+              
+              <div class="draft-header">
+                <div>
+                  <h3 style="margin:0 0 4px">⚔️ Escolha seus 3 Pokémon de Combate</h3>
+                  <div id="draftOpponentStatus" style="font-size:12px;color:#444;font-weight:700">⏳ Oponente escolhendo...</div>
+                </div>
+
+                <div id="draftTimerBox" class="draft-timer-box">
+                  <span>⏱️</span>
+                  <span id="draftTimerVal">60s</span>
+                </div>
+
+                <div class="stamina-meter">
+                  <div class="stamina-label">
+                    <span>⚡ Stamina da Equipe:</span>
+                    <span id="teamStaminaVal">0 / 1550 SP</span>
+                  </div>
+                  <div class="stamina-bar-bg">
+                    <div id="teamStaminaFill" class="stamina-bar-fill" style="width:0%"></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Slots Selecionados -->
+              <div class="team-slots">
+                <div id="teamSlot1" class="team-slot"></div>
+                <div id="teamSlot2" class="team-slot"></div>
+                <div id="teamSlot3" class="team-slot"></div>
+              </div>
+
+              <!-- Busca e Lista de 1.025 Pokémon com Stamina -->
+              <div class="draft-search-bar">
+                <input id="draftSearch" type="search" placeholder="🔍 Filtrar Pokémon por nome ou número..." />
+                <select id="draftTypeFilter">
+                  <option value="">Todos os tipos</option>
+                  <option value="water">Água</option>
+                  <option value="fire">Fogo</option>
+                  <option value="grass">Planta</option>
+                  <option value="electric">Elétrico</option>
+                  <option value="psychic">Psíquico</option>
+                  <option value="ice">Gelo</option>
+                  <option value="dragon">Dragão</option>
+                  <option value="fighting">Lutador</option>
+                  <option value="ground">Terra</option>
+                  <option value="rock">Pedra</option>
+                  <option value="ghost">Fantasma</option>
+                  <option value="steel">Aço</option>
+                  <option value="fairy">Fada</option>
+                </select>
+              </div>
+
+              <div id="draftPokeGrid" class="draft-poke-grid"></div>
+
+              <div class="draft-footer">
+                <div style="font-size:12px;color:#555">
+                  💡 <b>Regra:</b> O limite total de Stamina é de <b>1.550 SP</b> para balancear Pokémon leves e fortes. Se o tempo de 60s acabar, o sistema completa sua equipe no automático!
+                </div>
+                <button id="btnLockTeam" class="btn-lock-team" disabled>🔒 Confirmar Equipe (0/3)</button>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- 4. Arena de Batalha (Estilo Pokémon GO) -->
+          <div id="battleArena" style="display:none">
+            <div class="battle-arena-wrapper">
+              
+              <!-- Estádio 3D / Isométrico -->
+              <div class="battle-stage">
+                <div class="stadium-ring"></div>
+                <div class="stadium-line"></div>
+
+                <!-- HUD Oponente -->
+                <div class="hud-opponent">
+                  <div class="hud-name-row">
+                    <span id="oppHudName">Oponente</span>
+                    <span id="oppShields" class="hud-shields">🛡️ 🛡️</span>
+                  </div>
+                  <div class="hp-bar-bg">
+                    <div id="oppHpFill" class="hp-bar-fill" style="width:100%"></div>
+                  </div>
+                  <div id="oppHpText" class="hp-text">100%</div>
+                </div>
+
+                <!-- Pokémon do Oponente (No Fundo) -->
+                <div id="oppPokeStage" class="poke-opponent-stage">
+                  <img id="oppSprite" src="" alt="" />
+                  <div class="poke-shadow"></div>
+                </div>
+
+                <!-- Pokémon do Jogador (No Primeiro Plano) -->
+                <div id="myPokeStage" class="poke-player-stage">
+                  <img id="mySprite" src="" alt="" />
+                  <div class="poke-shadow" style="width:120px;height:28px"></div>
+                </div>
+
+                <!-- HUD Jogador -->
+                <div class="hud-player">
+                  <div class="hud-name-row">
+                    <span id="myHudName">Você</span>
+                    <span id="myShields" class="hud-shields">🛡️ 🛡️</span>
+                  </div>
+                  <div class="hp-bar-bg">
+                    <div id="myHpFill" class="hp-bar-fill" style="width:100%"></div>
+                  </div>
+                  <div id="myHpText" class="hp-text">200 / 200 HP</div>
+                  <div class="energy-bar-bg">
+                    <div id="myEnergyFill" class="energy-bar-fill" style="width:0%"></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Alerta de Escudo (Quando o adversário desfere golpe carregado) -->
+              <div id="shieldAlertOverlay" class="shield-alert-overlay" style="display:none">
+                <div class="shield-alert-box">
+                  <h3>⚠️ ATAQUE CARREGADO INCOMING!</h3>
+                  <p>O adversário disparou <b id="shieldMoveName">Ataque</b>!</p>
+                  <div style="font-size:24px;font-weight:900;color:#0091ea" id="shieldCountdown">3s</div>
+                  <button id="btnUseShield" class="btn-activate-shield">🛡️ ATIVAR ESCUDO!</button>
+                </div>
+              </div>
+
+              <!-- Controles de Ação de Combate -->
+              <div class="battle-controls">
+                <div class="battle-buttons-grid">
+                  <button id="btnFastAtk" class="btn-fast-atk">⚡ Ataque Rápido</button>
+                  <button id="btnCharged1" class="btn-charged-atk" disabled>💥 Carregado 1</button>
+                  <button id="btnCharged2" class="btn-charged-atk" disabled>✨ Carregado 2</button>
+                </div>
+
+                <!-- Banco de Reserva (Troca de Pokémon) -->
+                <div class="bench-bar">
+                  <span class="bench-label">🔄 Trocar Pokémon:</span>
+                  <div id="benchList" class="bench-list"></div>
+                  <button id="btnSurrender" class="btn small" style="background:#b71c1c;padding:6px 10px;font-size:11px">Render-se</button>
+                </div>
+
+                <!-- Feed de Logs de Combate -->
+                <div id="battleTicker" class="battle-ticker">
+                  <div>⚔️ Arena pronta para combate!</div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- ===== Modal de Desafio Recebido ===== -->
+  <dialog id="challengeModal">
+    <div class="teach-box" style="text-align:center">
+      <img id="challengeAvatar" src="" style="width:68px;height:68px;border-radius:50%;border:3px solid var(--red);background:#fff;margin:0 auto 10px;" alt="" />
+      <h3>⚔️ DESAFIO DE BATALHA!</h3>
+      <p><b id="challengeChallengerName">Treinador</b> (<span id="challengeChallengerRating">1000 PTS</span>) convidou você para uma batalha Pokémon online!</p>
+      <div style="font-size:20px;font-weight:900;color:#d32f2f;margin-bottom:14px" id="challengeTimer">30s</div>
+      <div style="display:flex;gap:10px">
+        <button id="btnAcceptChallenge" class="btn shoot" style="flex:1">Aceitar Batalha!</button>
+        <button id="btnDeclineChallenge" class="btn" style="flex:1;background:#555">Recusar</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- ===== Modal de Resultado da Batalha ===== -->
+  <dialog id="battleResultModal">
+    <div class="teach-box" style="text-align:center">
+      <h2 id="battleResultTitle" style="font-size:28px;margin:6px 0">🏆 VITÓRIA!</h2>
+      <p id="battleResultMsg" style="font-size:15px;line-height:1.5;margin-bottom:18px"></p>
+      <button id="btnBackToLobby" class="btn shoot" style="width:100%;font-size:16px">Voltar ao Salão de Batalha</button>
+    </div>
+  </dialog>
     </main>
   </div>
 
@@ -149,6 +452,7 @@
   </dialog>
 
   <script src="app.js"></script>
+  <script src="battle.js"></script>
 </body>
 </html>
 

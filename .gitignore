@@ -15,7 +15,10 @@ data/raw/
 data/clip_index.npz
 data/clip_text_cache.npz
 data/user_samples/
+data/battle.db*
 
 # Imagens baixadas dinamicamente
 web/img/artwork/
 web/img/sprites/
+
+scratch/

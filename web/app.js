@@ -320,7 +320,22 @@ function renderGrid() {
 document.querySelectorAll(".tab").forEach((tab) => tab.addEventListener("click", () => {
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t === tab));
   document.querySelectorAll(".view").forEach((v) => v.classList.toggle("active", v.id === "view-" + tab.dataset.view));
+  window.location.hash = tab.dataset.view;
 }));
+
+function switchTab(viewName) {
+  const tab = document.querySelector(`.tab[data-view="${viewName}"]`);
+  if (!tab) return;
+  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t === tab));
+  document.querySelectorAll(".view").forEach((v) => v.classList.toggle("active", v.id === "view-" + viewName));
+}
+
+if (window.location.hash) {
+  switchTab(window.location.hash.replace("#", ""));
+}
+window.addEventListener("hashchange", () => {
+  if (window.location.hash) switchTab(window.location.hash.replace("#", ""));
+});
 
 $("#btnCam").addEventListener("click", () => (stream ? stopCamera() : startCamera()));
 $("#btnFlip").addEventListener("click", () => { facing = facing === "environment" ? "user" : "environment"; startCamera(); });

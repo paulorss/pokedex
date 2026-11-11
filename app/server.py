@@ -25,6 +25,8 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image
 
 from app.recognizer import Recognizer
+from app.battle_engine import calculate_pokemon_stamina
+from app.battle_server import router as battle_router, websocket_battle_endpoint
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
@@ -149,6 +151,7 @@ def list_pokemon():
         "name": p["name"],
         "types": p["types"],
         "types_pt": p["types_pt"],
+        "stamina_cost": calculate_pokemon_stamina(p),
         "sprite": format_pokemon(p)["sprite"],
         "image": format_pokemon(p)["image"],
     } for p in POKEMON]
@@ -306,6 +309,11 @@ async def api_register_custom(
 
     print(f"✔ Novo Pokémon cadastrado: #{new_id:03d} {name} (Tipos: {types})")
     return {"ok": True, "message": f"#{new_id:03d} {name} cadastrado com sucesso!", "pokemon": new_pokemon}
+
+
+# Módulo de Batalha Pokémon Online
+app.include_router(battle_router)
+app.add_api_websocket_route("/ws/battle", websocket_battle_endpoint)
 
 
 @app.get("/img/{folder}/{filename}")
