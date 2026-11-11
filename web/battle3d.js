@@ -7,6 +7,13 @@
   "use strict";
 
   const SIDES = { me: { x: -1.9, z: 1.3 }, foe: { x: 1.9, z: -1.3 } };
+  const ELEMENT_COLORS = {
+    fire: 0xff6b2b, water: 0x38a3ff, grass: 0x54d169, electric: 0xffe042,
+    ice: 0x7de8ff, fighting: 0xf05442, poison: 0xc259eb, ground: 0xe0aa4c,
+    flying: 0x8fb8ff, psychic: 0xff65a8, bug: 0xa2d943, rock: 0xd4ad6a,
+    ghost: 0x9b78ff, dragon: 0x6f68ff, steel: 0xb2c9db, dark: 0x8e72a6,
+    fairy: 0xff94c2, normal: 0xd8e0e8,
+  };
   const MAX_PARTICLES = 700;
   const MAX_PIXEL_RATIO = 2;
   const POINT_SCALE_DIVISOR = 170; // partícula de tamanho 60 ≈ 20 px na distância da câmera
@@ -136,7 +143,21 @@
     const uTime = { value: 0 };
     const tweens = new Set();
     const disposables = [];
-    let running = false, rafId = 0, last = 0, shake = 0, fireflyClock = 0, camDist = 8.2;
+    let running = false, rafId = 0, last = 0, shake = 0, fireflyClock = 0, camDist = 8.2, hitStop = 0;
+    const camGoal = { x: 0, y: 0.95, z: 0, zoom: 0, timer: 0 };
+    const camCur = { x: 0, y: 0.95, z: 0, zoom: 0 };
+    function focusOn(side, zoomDelta = 1.15, dur = 0.65) {
+      if (reduceMotion) return;
+      const s = side ? SIDES[side] : null;
+      camGoal.x = s ? s.x * 0.42 : 0;
+      camGoal.y = s ? 1.15 : 0.95;
+      camGoal.z = s ? s.z * 0.35 : 0;
+      camGoal.zoom = zoomDelta;
+      camGoal.timer = dur;
+    }
+    function triggerHitStop(sec = 0.09) {
+      if (!reduceMotion) hitStop = Math.max(hitStop, sec);
+    }
 
     const track = (obj) => { disposables.push(obj); return obj; };
     const geo = {
@@ -353,6 +374,7 @@
       const slot = slots[side];
       disposeCreature(slot);
       slot.current = buildModel(def, side);
+      slot.element = def.element || "normal";
       const col = (def.colors && def.colors[0]) || "#3a9bff";
       const col2 = (def.colors && def.colors[1]) || "#ffe082";
       slot.color.set(col);
@@ -363,8 +385,13 @@
       groundU[side === "me" ? "uA" : "uB"].value.set(col);
       if (!opts.animate) { slot.actor.scale.setScalar(1); return Promise.resolve(); }
       slot.actor.scale.setScalar(0.01);
-      emit(chestOf(side), { count: 28, color: col2, speed: 2.6, life: 0.7, size: 70, up: 0.6 });
+      focusOn(side, 0.7, 0.45);
+      // Feixe branco-vermelho de invocação pela Pokébola
+      burst(chestOf(side), 0xffffff, 2.5);
+      emit(chestOf(side), { count: 24, color: 0xff5252, speed: 2.0, life: 0.55, size: 65, up: 1.4, gravity: -0.6 });
+      emit(chestOf(side), { count: 30, color: col2, speed: 2.8, life: 0.75, size: 75, up: 0.7 });
       groundPulse(side);
+      flash(side, 0.85);
       return tween(0.5, (k) => { slot.actor.scale.setScalar(Math.max(0.01, k)); slot.lift = (1 - k) * 2.2; }, easeBack);
     }
 
@@ -377,38 +404,59 @@
       const slot = slots[side];
       return tween(0.4, (k) => { slot.offsetX = -strength * Math.sin(k * Math.PI); slot.squash = 1 - 0.14 * Math.sin(k * Math.PI); });
     }
-    async function impact(target, color, heavy, guarded) {
+    async function impact(target, color, heavy, guarded, mult = 1) {
       const pos = chestOf(target);
-      addShake(heavy ? 0.42 : 0.2);
-      emit(pos, { count: heavy ? 56 : 20, color, speed: heavy ? 5 : 3.2, life: 0.75, size: heavy ? 95 : 70, up: 0.5 });
+      const isSuper = mult > 1;
+      if (!guarded && (heavy || isSuper)) triggerHitStop(isSuper ? 0.11 : 0.085);
+      focusOn(target, isSuper ? 1.45 : heavy ? 1.15 : 0.55, heavy ? 0.55 : 0.32);
+      addShake(isSuper ? 0.58 : heavy ? 0.44 : 0.22);
+      emit(pos, { count: heavy || isSuper ? 64 : 24, color, speed: heavy || isSuper ? 5.4 : 3.4, life: 0.8, size: heavy || isSuper ? 105 : 72, up: 0.55 });
+      if (isSuper) {
+        emit(pos, { count: 28, color: 0xffffff, speed: 6.0, life: 0.65, size: 80, up: 0.8 });
+        burst(pos, 0xffe066, 3.8);
+      }
       if (guarded) { slots[target].shieldU.uAlpha.value = 2.2; tween(0.4, (k) => { slots[target].shieldU.uAlpha.value = 2.2 - 1.2 * k; }); }
-      await Promise.all([burst(pos, color, heavy ? 3.2 : 1.9), flash(target, guarded ? 0.35 : 1), recoil(target, guarded ? 0.12 : heavy ? 0.55 : 0.3)]);
+      await Promise.all([
+        burst(pos, color, heavy || isSuper ? 3.4 : 1.9),
+        flash(target, guarded ? 0.35 : 1),
+        recoil(target, guarded ? 0.12 : isSuper ? 0.65 : heavy ? 0.55 : 0.3),
+      ]);
     }
 
     async function playAttack(side, ev) {
-      const slot = slots[side], target = other(side), color = slot.color.getHex();
+      const slot = slots[side], target = other(side);
+      const color = ELEMENT_COLORS[ev.element] || slot.color.getHex();
+      const mult = ev.mult || 1;
+      const guarded = ev.guarded && !ev.broke_guard;
       if (ev.kind === "golpe") {
+        focusOn(side, 0.55, 0.25);
         await tween(0.14, (k) => { slot.offsetX = -0.35 * k; slot.squash = 1 - 0.1 * k; });
-        await tween(0.18, (k) => { slot.offsetX = -0.35 + (LUNGE_DISTANCE + 0.35) * k; slot.squash = 0.9 + 0.2 * k; }, easeIn);
-        const hit = impact(target, color, false, ev.guarded && !ev.broke_guard);
+        await tween(0.18, (k) => {
+          slot.offsetX = -0.35 + (LUNGE_DISTANCE + 0.35) * k;
+          slot.squash = 0.9 + 0.2 * k;
+          emit(chestOf(side), { count: 2, color, speed: 1.4, life: 0.25, size: 44, gravity: 0 });
+        }, easeIn);
+        const hit = impact(target, color, mult > 1, guarded, mult);
         await tween(0.34, (k) => { slot.offsetX = LUNGE_DISTANCE * (1 - k); slot.squash = 1.1 - 0.1 * k; });
         await hit;
         return;
       }
       const from = chestOf(side), to = chestOf(target);
+      focusOn(side, 1.45, 0.65);
       groundPulse(side);
-      emit(from, { count: 34, color, speed: 2.4, life: 0.45, size: 60, radius: 1.5, inward: true, gravity: 0, spread: 0.4 });
-      await tween(0.4, (k) => { slot.squash = 1 + 0.18 * k; slot.lift = 0.25 * k; });
+      emit(from, { count: 42, color, speed: 2.7, life: 0.5, size: 68, radius: 1.65, inward: true, gravity: 0, spread: 0.45 });
+      await tween(0.48, (k) => { slot.squash = 1 + 0.2 * k; slot.lift = 0.28 * k; });
       orb.material.color.set(color); orb.visible = true;
-      tween(0.25, (k) => { slot.squash = 1.18 - 0.18 * k; slot.lift = 0.25 * (1 - k); });
-      await tween(0.3, (k) => {
-        orb.position.lerpVectors(from, to, k); orb.position.y += Math.sin(k * Math.PI) * 0.7;
-        orb.scale.setScalar(0.24 + 0.1 * Math.sin(k * 20));
-        emit(orb.position, { count: 3, color, speed: 0.6, life: 0.35, size: 55, gravity: 0 });
+      tween(0.25, (k) => { slot.squash = 1.2 - 0.2 * k; slot.lift = 0.28 * (1 - k); });
+      focusOn(target, 1.15, 0.45);
+      await tween(0.32, (k) => {
+        orb.position.lerpVectors(from, to, k); orb.position.y += Math.sin(k * Math.PI) * 0.72;
+        orb.scale.setScalar(0.28 + 0.12 * Math.sin(k * 22));
+        emit(orb.position, { count: 4, color, speed: 0.85, life: 0.38, size: 62, gravity: 0 });
       }, easeIn);
       orb.visible = false;
       groundPulse(target);
-      await impact(target, color, true, ev.guarded && !ev.broke_guard);
+      await impact(target, color, true, guarded, mult);
     }
 
     function playGuard(side) {
@@ -429,6 +477,8 @@
       const slot = slots[side];
       const pos = chestOf(side);
       slot.shield.visible = false;
+      focusOn(side, 1.3, 0.8);
+      triggerHitStop(0.08);
       addShake(0.5);
       // 1) Impacto vermelho/branco + anéis de choque
       flash(side, 1.0);
@@ -478,6 +528,7 @@
     async function celebrate(side) {
       const slot = slots[side];
       const top = new THREE.Vector3(SIDES[side].x, 2.6, SIDES[side].z);
+      focusOn(side, 1.35, 1.25);
       emit(top, { count: 110, color: 0xffd166, speed: 3.8, life: 1.7, size: 85, up: 0.95, gravity: 1.7 });
       emit({ x: 0, y: 3.1, z: 0 }, { count: 80, color: 0x69f0ae, speed: 4.2, life: 1.8, size: 70, up: 0.7, gravity: 1.4 });
       burst(top, 0xffd166, 4.2);
@@ -520,25 +571,50 @@
     function frame(now) {
       if (!running) return;
       rafId = requestAnimationFrame(frame);
-      const dt = Math.min(0.05, (now - last) / 1000 || 0); last = now;
+      const rawDt = Math.min(0.05, (now - last) / 1000 || 0); last = now;
+      if (hitStop > 0) hitStop = Math.max(0, hitStop - rawDt);
+      const dt = hitStop > 0 ? 0 : rawDt;
       uTime.value += dt;
       const t = uTime.value;
-      for (const tw of [...tweens]) {
-        tw.t += dt;
-        const k = Math.min(1, tw.t / tw.dur);
-        tw.fn(tw.ease(k));
-        if (k >= 1) { tweens.delete(tw); tw.resolve(); }
+      if (dt > 0) {
+        for (const tw of [...tweens]) {
+          tw.t += dt;
+          const k = Math.min(1, tw.t / tw.dur);
+          tw.fn(tw.ease(k));
+          if (k >= 1) { tweens.delete(tw); tw.resolve(); }
+        }
+        idle(slots.me, t); idle(slots.foe, t);
+        fireflyClock += dt;
+        if (fireflyClock > 0.28) {
+          fireflyClock = 0;
+          const a = Math.random() * Math.PI * 2, r = 2 + Math.random() * 4.5;
+          const elSide = Math.random() < 0.5 ? slots.me.element : slots.foe.element;
+          const ambColor = ELEMENT_COLORS[elSide] || 0xd8ffb0;
+          const isRain = elSide === "water" || elSide === "ice";
+          emit(
+            { x: Math.cos(a) * r, y: isRain ? 3.2 : 0.35 + Math.random() * 2, z: Math.sin(a) * r },
+            { count: 1, color: ambColor, speed: isRain ? 0.45 : 0.25, life: isRain ? 1.8 : 3.2, size: isRain ? 22 : 28, gravity: isRain ? 0.55 : -0.04 }
+          );
+        }
       }
-      idle(slots.me, t); idle(slots.foe, t);
-      fireflyClock += dt;
-      if (fireflyClock > 0.35) {
-        fireflyClock = 0;
-        const a = Math.random() * Math.PI * 2, r = 2 + Math.random() * 4.5;
-        emit({ x: Math.cos(a) * r, y: 0.3 + Math.random() * 2, z: Math.sin(a) * r }, { count: 1, color: 0xd8ffb0, speed: 0.25, life: 3.5, size: 26, gravity: -0.02 });
+      if (camGoal.timer > 0) {
+        camGoal.timer = Math.max(0, camGoal.timer - rawDt);
+        if (camGoal.timer === 0) { camGoal.x = 0; camGoal.y = 0.95; camGoal.z = 0; camGoal.zoom = 0; }
       }
-      shake = Math.max(0, shake - dt * 1.6);
+      const lerpK = 1 - Math.exp(-8.5 * rawDt);
+      camCur.x += (camGoal.x - camCur.x) * lerpK;
+      camCur.y += (camGoal.y - camCur.y) * lerpK;
+      camCur.z += (camGoal.z - camCur.z) * lerpK;
+      camCur.zoom += (camGoal.zoom - camCur.zoom) * lerpK;
+      shake = Math.max(0, shake - rawDt * 1.6);
       const sway = reduceMotion ? 0 : Math.sin(t * 0.22) * 0.7;
-      camera.position.set(sway + (Math.random() - 0.5) * shake, camDist * 0.42 + (Math.random() - 0.5) * shake, camDist);
+      const dist = Math.max(4.6, camDist - camCur.zoom);
+      camera.position.set(
+        sway + camCur.x * 0.65 + (Math.random() - 0.5) * shake,
+        dist * 0.42 + (camCur.y - 0.95) * 0.5 + (Math.random() - 0.5) * shake,
+        dist + camCur.z * 0.35
+      );
+      lookTarget.set(camCur.x, camCur.y, camCur.z);
       camera.lookAt(lookTarget);
       renderer.render(scene, camera);
     }
@@ -580,7 +656,7 @@
       renderer.domElement.remove();
     }
 
-    return { setCreature, play, clearGuards, celebrate, defeatEffect, screenPos, start, stop, dispose };
+    return { setCreature, play, clearGuards, celebrate, defeatEffect, focusOn, triggerHitStop, screenPos, start, stop, dispose };
   }
 
   window.Arena3D = { create };

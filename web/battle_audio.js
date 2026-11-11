@@ -144,6 +144,17 @@
       tone(440, 0.22, { type: "triangle", vol: 0.06, delay: 0.05, slideTo: 1320 });
       noise(0.2, { vol: 0.07, delay: 0.08, highpass: 1400, lowpass: 6000 });
     },
+    cutIn() {
+      // Corte estilo anime (shing + energia subindo)
+      noise(0.18, { vol: 0.11, highpass: 2400, lowpass: 8500 });
+      tone(1180, 0.11, { type: "sine", vol: 0.075, slideTo: 2200 });
+      tone(587.33, 0.16, { type: "triangle", vol: 0.065, delay: 0.04, slideTo: 1174.66 });
+    },
+    critImpact() {
+      // Soco pesado / hit-stop com grave profundo
+      tone(110, 0.22, { type: "triangle", vol: 0.14, slideTo: 36 });
+      noise(0.16, { vol: 0.12, delay: 0.02, highpass: 90, lowpass: 900 });
+    },
     guard() {
       tone(659.25, 0.12, { type: "sine", vol: 0.08 });
       tone(987.77, 0.18, { type: "triangle", vol: 0.08, delay: 0.07 });

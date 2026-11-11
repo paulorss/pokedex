@@ -460,6 +460,31 @@
     void el.offsetWidth;
     el.classList.add("show");
   }
+  function triggerSpeedlines(element = "normal") {
+    const sl = $("#speedlines");
+    if (!sl) return;
+    sl.className = `speedlines e-${esc(element || "normal")}`;
+    void sl.offsetWidth;
+    sl.classList.add("active");
+  }
+  function showCutIn(side, actor, ev) {
+    const host = $("#animeCutIn");
+    if (!host || !actor) return;
+    const element = ev.element || actor.element || "normal";
+    const superHit = ev.mult > 1;
+    host.className = `anime-cutin ${side} e-${esc(element)}${superHit ? " super" : ""}`;
+    host.innerHTML = `
+      <div class="cutin-band">
+        <div class="cutin-art"><img src="${artUrl(actor.id)}" alt="${esc(actor.name)}" onerror="this.onerror=null;this.src='${spriteUrl(actor.id)}'"/></div>
+        <div class="cutin-info">
+          <span class="cutin-tag">${superHit ? "SUPER EFICAZ!" : "TÉCNICA ESPECIAL"}</span>
+          <b class="cutin-move">${esc(ev.name || actor.tech?.name || "Técnica")}</b>
+          <span class="cutin-who">${esc(actor.name)} · ${esc(elName(element))}</span>
+        </div>
+      </div>`;
+    void host.offsetWidth;
+    host.classList.add("show");
+  }
   function floatText(side, text, cls = "") {
     const pos = S.arena.screenPos(side);
     const el = document.createElement("span");
@@ -500,20 +525,32 @@
     const actor = activeOf(live, ev.p);
     if (ev.t === "attack") {
       if (ev.kind === "tecnica") {
-        announce(ev.name, elName(ev.element));
+        showCutIn(side, actor, ev);
+        triggerSpeedlines(ev.element);
+        sfx("playSfx", "cutIn");
         sfx("playSfx", "tech");
+      } else if (ev.mult > 1) {
+        triggerSpeedlines(ev.element);
       }
       const cls = ev.mult > 1 ? "strong" : ev.mult < 1 ? "weak" : "";
       setTimeout(() => {
         sfx("playSfx", ev.mult > 1 ? "superHit" : ev.mult < 1 ? "weakHit" : "hit");
+        if (ev.kind === "tecnica" || ev.mult > 1) sfx("playSfx", "critImpact");
         floatText(targetSide, `-${ev.dmg}`, cls);
         if (ev.broke_guard) floatText(targetSide, "Guarda atravessada", "info");
         else if (ev.guarded) floatText(targetSide, "Amortecido", "info");
         else if (ev.mult > 1) floatText(targetSide, "Super eficaz!", "info");
         if (targetSide === "me") buzz(ev.kind === "tecnica" ? [30, 40, 60] : 25);
-        if (ev.kind === "tecnica" || ev.mult > 1) { const st = $("#stage"); st.classList.remove("shake"); void st.offsetWidth; st.classList.add("shake"); }
+        if (ev.kind === "tecnica" || ev.mult > 1) {
+          const st = $("#stage");
+          if (st) {
+            st.classList.remove("shake", "hit-impact");
+            void st.offsetWidth;
+            st.classList.add("shake", "hit-impact");
+          }
+        }
         updatePlate(targetSide, live);
-      }, ev.kind === "tecnica" ? 720 : 330);
+      }, ev.kind === "tecnica" ? 780 : 330);
     } else if (ev.t === "heal") {
       sfx("playSfx", "heal");
       floatText(side, `+${ev.heal}`, "heal");
@@ -557,7 +594,8 @@
       narrate(ev.text);
       decorateEvent(ev, live);
       const def = activeOf(live, ev.p);
-      await Promise.all([Promise.race([S.arena.play(ev, side, def), sleep(EVENT_MS)]), sleep(EVENT_MS - 150)]);
+      const stepMs = (ev.t === "attack" && ev.kind === "tecnica") ? 1480 : EVENT_MS;
+      await Promise.all([Promise.race([S.arena.play(ev, side, def), sleep(stepMs)]), sleep(stepMs - 150)]);
       updatePlate("me", live); updatePlate("foe", live);
     }
     S.arena.clearGuards();
@@ -568,6 +606,8 @@
   function leaveRoom() {
     sfx("stopBgm");
     S.roomId = null; S.game = null; S.chosen = null; S.queue = Promise.resolve();
+    if ($("#animeCutIn")) { $("#animeCutIn").className = "anime-cutin"; $("#animeCutIn").innerHTML = ""; }
+    if ($("#speedlines")) $("#speedlines").className = "speedlines";
     if (S.arena) { S.arena.dispose(); S.arena = null; }
     for (const id of ["duelResult", "duelConfirm"]) if ($(`#${id}`).open) $(`#${id}`).close();
     if (S.user) enterLobby();
@@ -671,7 +711,9 @@
         S.game = msg.state; S.chosen = null;
         $("#ticker").innerHTML = ""; $("#floats").innerHTML = "";
         if ($("#chatBubbles")) $("#chatBubbles").innerHTML = "";
-        if ($("#stage")) $("#stage").classList.remove("victory-glow", "defeat-dim", "ko-flash");
+        if ($("#animeCutIn")) { $("#animeCutIn").className = "anime-cutin"; $("#animeCutIn").innerHTML = ""; }
+        if ($("#speedlines")) $("#speedlines").className = "speedlines";
+        if ($("#stage")) $("#stage").classList.remove("victory-glow", "defeat-dim", "ko-flash", "hit-impact", "shake");
         buildPlate("me"); buildPlate("foe");
         updatePlate("me", S.game); updatePlate("foe", S.game);
         $("#roundChip").textContent = "Preparar";
