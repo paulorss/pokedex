@@ -533,8 +533,13 @@
       sfx("playSfx", "sendOut");
       if (actor) setTimeout(() => sfx("playCry", actor.id, actor.name, false), 140);
     } else if (ev.t === "faint") {
-      if (actor) sfx("playCry", actor.id, actor.name, true);
-      setTimeout(() => sfx("playSfx", "faint"), 180);
+      if (actor) {
+        announce("NOCAUTE!", `${actor.name} fora de combate!`);
+        sfx("playCry", actor.id, actor.name, true);
+      }
+      const st = $("#stage");
+      if (st) { st.classList.remove("ko-flash"); void st.offsetWidth; st.classList.add("ko-flash"); }
+      setTimeout(() => sfx("playSfx", "faint"), 160);
     }
   }
   async function playRound(msg) {
@@ -585,7 +590,50 @@
     error(msg) { toast("Não foi possível", msg.message, "error"); },
     lobby_update(msg) { if (S.user) renderTrainers(msg.trainers); },
     challenge_sent(msg) { toast("Convite enviado", `Aguardando ${msg.target} responder.`); },
-    challenge_declined(msg) { toast("Convite recusado", `${msg.by} não pode duelar agora.`); },
+    challenge_declined(msg) {
+      toast("Convite recusado", `${msg.by} não pode duelar agora.`);
+      if ($("#btnRematch")) { $("#btnRematch").disabled = false; $("#btnRematch").textContent = "Propor Revanche"; }
+      if ($("#rematchBanner")) { $("#rematchBanner").hidden = true; $("#rematchBanner").innerHTML = ""; }
+    },
+    rematch_sent(msg) {
+      if ($("#btnRematch")) { $("#btnRematch").disabled = true; $("#btnRematch").textContent = "Aguardando..."; }
+      const ban = $("#rematchBanner");
+      if (ban && $("#duelResult")?.open) {
+        ban.hidden = false;
+        ban.innerHTML = `<b>Convite de revanche enviado!</b><span>Aguardando ${esc(msg.target)} aceitar para escolher novas equipes...</span>`;
+      } else {
+        toast("Revanche enviada", `Aguardando ${msg.target} aceitar.`);
+      }
+    },
+    rematch_received(msg) {
+      S.inviteId = msg.invite_id;
+      sfx("playEmote", "🔥");
+      buzz([70, 40, 70]);
+      clearTimeout(S.inviteTimer);
+      S.inviteTimer = setTimeout(() => answerInvite(false), INVITE_SECONDS * 1000);
+      const ban = $("#rematchBanner");
+      if (ban && $("#duelResult")?.open) {
+        ban.hidden = false;
+        ban.innerHTML = `
+          <b>🔥 ${esc(msg.challenger.display_name)} quer uma revanche!</b>
+          <div class="dialog-actions">
+            <button type="button" class="btn shoot small" id="btnRematchAccept">Aceitar Revanche</button>
+            <button type="button" class="btn ghost small" id="btnRematchDecline">Recusar</button>
+          </div>`;
+        $("#btnRematchAccept", ban).addEventListener("click", () => answerInvite(true));
+        $("#btnRematchDecline", ban).addEventListener("click", () => {
+          answerInvite(false);
+          ban.hidden = true;
+          ban.innerHTML = "";
+        });
+        return;
+      }
+      setAvatar($("#inviteAvatar"), msg.challenger.avatar_id);
+      $("#inviteTitle").textContent = `Revanche: ${msg.challenger.display_name}`;
+      $("#inviteMsg").textContent = `${msg.challenger.rating} pontos · Aceita ir para a escolha de equipe?`;
+      const bar = $("#inviteBar"); bar.style.animation = "none"; void bar.offsetWidth; bar.style.animation = "";
+      if (!$("#duelInvite").open) $("#duelInvite").showModal();
+    },
     challenge_received(msg) {
       S.inviteId = msg.invite_id;
       setAvatar($("#inviteAvatar"), msg.challenger.avatar_id);
@@ -604,11 +652,13 @@
       $("#duelOffline").showModal();
     },
     battle_matched(msg) {
+      if (S.arena) { S.arena.dispose(); S.arena = null; }
       if (msg.cooldowns) setCooldowns(msg.cooldowns);
       Object.assign(S, { roomId: msg.room_id, role: msg.role, opponent: msg.opponent, game: msg.state, team: [], locked: false, filter: "", search: "", sort: "id", limit: PAGE_STEP });
       if ($("#draftSearch")) $("#draftSearch").value = "";
       if ($("#draftSort")) $("#draftSort").value = "id";
-      for (const id of ["duelInvite", "duelOffline"]) if ($(`#${id}`).open) $(`#${id}`).close();
+      if ($("#rematchBanner")) { $("#rematchBanner").hidden = true; $("#rematchBanner").innerHTML = ""; }
+      for (const id of ["duelInvite", "duelOffline", "duelResult", "duelConfirm"]) if ($(`#${id}`)?.open) $(`#${id}`).close();
       setDraftTimer(msg.state.draft_timer);
       setOpponentDraft(msg.opponent.is_bot ? S.rules.team_size : 0, Boolean(msg.opponent.is_bot));
       renderDraft();
@@ -621,6 +671,7 @@
         S.game = msg.state; S.chosen = null;
         $("#ticker").innerHTML = ""; $("#floats").innerHTML = "";
         if ($("#chatBubbles")) $("#chatBubbles").innerHTML = "";
+        if ($("#stage")) $("#stage").classList.remove("victory-glow", "defeat-dim", "ko-flash");
         buildPlate("me"); buildPlate("foe");
         updatePlate("me", S.game); updatePlate("foe", S.game);
         $("#roundChip").textContent = "Preparar";
@@ -664,17 +715,40 @@
         runTurnBar(0); renderControls(false);
         const won = msg.winner === S.role;
         S.game = msg.state;
+        const st = $("#stage");
+        if (st) st.classList.add(won ? "victory-glow" : "defeat-dim");
+        announce(won ? "VITÓRIA!" : "DERROTA...", won ? "Campeão da Arena!" : "Retorno ao Centro Pokémon");
         sfx("playSfx", won ? "victory" : "defeat");
-        if (S.arena && msg.winner) await Promise.race([S.arena.celebrate(sideOf(msg.winner)), sleep(900)]);
+        if (S.arena) {
+          const anim = won
+            ? S.arena.celebrate(sideOf(msg.winner || S.role))
+            : (S.arena.defeatEffect ? S.arena.defeatEffect("me") : Promise.resolve());
+          await Promise.race([anim, sleep(1250)]);
+        }
         const dlg = $("#duelResult");
         dlg.classList.toggle("win", won);
+        if ($("#resultBadge")) $("#resultBadge").textContent = won ? "🏆 Vitória na Arena" : "🏥 Derrota no Duelo";
         $("#resultArt").innerHTML = (teamOf(msg.state, msg.winner || S.role) || []).map((c) => `<span class="e-${c.element}">${portrait(c, true)}</span>`).join("");
-        $("#resultTitle").textContent = won ? "Vitória!" : "Derrota";
+        $("#resultTitle").textContent = won ? "Vitória Épica!" : "Derrota...";
         const last = msg.state.logs[msg.state.logs.length - 1] || "";
         $("#resultMsg").textContent = won
-          ? `Você venceu ${S.opponent.display_name} em ${msg.state.round_no} rodadas. ${/desistiu|saiu/.test(last) ? last : ""}`
-          : `${msg.winner_name || S.opponent.display_name} levou a melhor em ${msg.state.round_no} rodadas. Ajuste o trio e tente a revanche.`;
-        buzz(won ? [40, 60, 40, 60, 120] : 120);
+          ? `Você derrotou ${S.opponent.display_name} em ${msg.state.round_no} rodadas! ${/desistiu|saiu/.test(last) ? last : ""}`
+          : `${msg.winner_name || S.opponent.display_name} venceu em ${msg.state.round_no} rodadas. Que tal uma revanche com um novo trio?`;
+        const koList = (teamOf(msg.state, S.role) || []).filter((c) => c.hp <= 0 || c.fainted).map((c) => c.name);
+        if ($("#resultSub")) {
+          if (koList.length) {
+            $("#resultSub").hidden = false;
+            $("#resultSub").textContent = `Centro Pokémon (24h em recuperação): ${koList.join(", ")}`;
+          } else {
+            $("#resultSub").hidden = true;
+          }
+        }
+        if ($("#rematchBanner")) { $("#rematchBanner").hidden = true; $("#rematchBanner").innerHTML = ""; }
+        if ($("#btnRematch")) {
+          $("#btnRematch").disabled = false;
+          $("#btnRematch").textContent = S.opponent?.is_bot ? "Jogar Revanche" : "Propor Revanche";
+        }
+        buzz(won ? [40, 60, 40, 60, 120] : 140);
         if ($("#duelConfirm").open) $("#duelConfirm").close();
         dlg.showModal();
       });
@@ -758,7 +832,6 @@
       const btn = e.target.closest("[data-emoji], [data-text]");
       if (!btn || !S.roomId) return;
       sfx("unlock");
-      sfx("playSfx", "click");
       send("battle_chat", {
         room_id: S.roomId,
         emoji: btn.dataset.emoji || "",
@@ -787,6 +860,11 @@
     $("#btnSurrender").addEventListener("click", () => $("#duelConfirm").showModal());
     $("#btnConfirmNo").addEventListener("click", () => $("#duelConfirm").close());
     $("#btnConfirmYes").addEventListener("click", () => { $("#duelConfirm").close(); send("surrender", { room_id: S.roomId }); });
+    if ($("#btnRematch")) $("#btnRematch").addEventListener("click", () => {
+      sfx("unlock");
+      sfx("playSfx", "click");
+      send("propose_rematch");
+    });
     $("#btnBackToLobby").addEventListener("click", async () => {
       leaveRoom();
       try {
@@ -804,10 +882,11 @@
     host.querySelectorAll(`.chat-bubble.${isMe ? "me" : "foe"}`).forEach((n) => n.remove());
     const el = document.createElement("div");
     el.className = `chat-bubble ${isMe ? "me" : "foe"}`;
-    el.innerHTML = `${msg.emoji ? `<span class="cb-emoji">${esc(msg.emoji)}</span>` : ""}<span><span class="cb-who">${esc(msg.from_name || (isMe ? "Você" : "Oponente"))}</span>${esc(msg.text || "")}</span>`;
+    const whoLabel = msg.from_name || (isMe ? "Você" : "Oponente");
+    el.innerHTML = `${msg.emoji ? `<span class="cb-emoji">${esc(msg.emoji)}</span>` : ""}<div><span class="cb-who">${esc(whoLabel)}</span><span class="cb-text">${esc(msg.text || (isMe ? "Provocou!" : "Emote!"))}</span></div>`;
     host.appendChild(el);
-    if (!isMe) sfx("playSfx", "click");
-    setTimeout(() => el.remove(), 3300);
+    sfx("playEmote", msg.emoji || msg.text || "");
+    setTimeout(() => el.remove(), 3400);
   }
   function updateAudioButtons() {
     const sfxOn = window.BattleAudio?.isSfxEnabled?.() ?? true;

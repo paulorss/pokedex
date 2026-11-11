@@ -47,6 +47,9 @@ active_rooms: dict[str, dict[str, Any]] = {}
 # invite_id -> {"from_user": dict, "to_user": dict}
 pending_invites: dict[str, dict[str, Any]] = {}
 
+# user_id -> metadata da última partida para suportar Revanche rápida
+last_matches: dict[int, dict[str, Any]] = {}
+
 BOT_NAMES = ["Líder Brock", "Líder Misty", "Campeão Lance", "Treinador Red", "Campeã Cynthia", "Treinadora Dawn"]
 DEFAULT_AVATAR = 25
 STARTER_AVATARS = [1, 4, 7, 25, 39, 94, 133, 143, 150, 248, 448, 658]
@@ -273,6 +276,20 @@ async def finish_battle(room_id: str) -> None:
 
     for player_no, uid in ((1, state.p1_id), (2, None if state.is_bot else state.p2_id)):
         if uid:
+            foe_no = 3 - player_no
+            last_matches[uid] = {
+                "is_bot": state.is_bot,
+                "opponent_id": None if state.is_bot else (state.p2_id if player_no == 1 else state.p1_id),
+                "opponent_name": state.name_of(foe_no),
+                "prefix": "eco" if (state.is_bot and state.p2_id) else "treino",
+                "bot_user": {
+                    "id": state.p2_id,
+                    "username": "",
+                    "display_name": state.p2_name,
+                    "avatar_id": random.choice(STARTER_AVATARS),
+                    "rating": 1000,
+                } if state.is_bot else None,
+            }
             ko_ids = [c["id"] for c in state.teams[player_no] if c["hp"] <= 0 or c.get("fainted")]
             if ko_ids:
                 mark_pokemon_ko(uid, ko_ids, hours=24)
@@ -333,18 +350,19 @@ async def _start_bot_room(user: dict[str, Any], ws: WebSocket, opponent: dict[st
 
 
 BOT_REPLIES = [
-    ("⚡", "Boa jogada!"),
-    ("🔥", "Vamos com tudo!"),
-    ("😎", "Essa foi por pouco!"),
-    ("👏", "Excelente ataque!"),
-    ("🛡️", "Defesa sólida!"),
-    ("👍", "Boa sorte, treinador!"),
+    ("🤡", "Bela tentativa, campeão!"),
+    ("😈", "Só isso que você tem?"),
+    ("🔥", "Vai virar churrasco!"),
+    ("🥶", "Ficou com medo agora?"),
+    ("💀", "Já chama a Enfermeira Joy!"),
+    ("👑", "Aqui quem manda sou eu!"),
+    ("🫡", "Jogou com coragem!"),
 ]
 _last_chat_at: dict[int, float] = {}
 
 
 async def _bot_chat_reply(room_id: str, bot_name: str) -> None:
-    await asyncio.sleep(1.0)
+    await asyncio.sleep(0.95)
     room = active_rooms.get(room_id)
     if not room or room["closed"]:
         return
@@ -361,7 +379,7 @@ async def _bot_chat_reply(room_id: str, bot_name: str) -> None:
 async def handle_ws_message(user_id: int, user: dict[str, Any], ws: WebSocket, data: dict[str, Any]) -> None:
     action = data.get("action")
     if online_users.get(user_id, {}).get("in_battle") and action in (
-            "challenge", "challenge_offline_bot", "accept_challenge", "start_bot_battle"):
+            "challenge", "challenge_offline_bot", "accept_challenge", "start_bot_battle", "propose_rematch"):
         await _send(ws, {"type": "error", "message": "Termine o duelo atual antes de começar outro."})
         return
 
@@ -481,6 +499,36 @@ async def handle_ws_message(user_id: int, user: dict[str, Any], ws: WebSocket, d
         })
         if state.is_bot and random.random() < 0.7:
             asyncio.create_task(_bot_chat_reply(state.room_id, state.p2_name))
+
+    elif action == "propose_rematch":
+        meta = last_matches.get(user_id)
+        if not meta:
+            await _send(ws, {"type": "error", "message": "Nenhuma partida recente encontrada para revanche."})
+            return
+        if meta["is_bot"]:
+            bot_target = meta.get("bot_user") or {
+                "id": None, "username": "", "display_name": meta.get("opponent_name") or random.choice(BOT_NAMES),
+                "avatar_id": random.choice(STARTER_AVATARS), "rating": 1000,
+            }
+            await _start_bot_room(user, ws, bot_target, meta.get("prefix") or "treino")
+            return
+        opp_id = meta.get("opponent_id")
+        target = get_user_by_id(opp_id) if opp_id else None
+        if not target or target["id"] not in online_users:
+            await _send(ws, {"type": "error", "message": f"{meta.get('opponent_name', 'O adversário')} não está mais conectado."})
+            return
+        if online_users[target["id"]].get("in_battle"):
+            await _send(ws, {"type": "error", "message": f"{target['display_name']} já entrou em outra batalha."})
+            return
+        invite_id = uuid.uuid4().hex[:8]
+        pending_invites[invite_id] = {"from_user": user, "to_user": target, "is_rematch": True}
+        await send_to_user(target["id"], {
+            "type": "rematch_received",
+            "invite_id": invite_id,
+            "challenger": _public_user(user),
+            "timeout": 30,
+        })
+        await _send(ws, {"type": "rematch_sent", "target": target["display_name"]})
 
     elif action == "surrender":
         found = _room_for(user_id, data.get("room_id"))

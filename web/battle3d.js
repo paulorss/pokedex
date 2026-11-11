@@ -427,9 +427,29 @@
     }
     async function playFaint(side) {
       const slot = slots[side];
+      const pos = chestOf(side);
       slot.shield.visible = false;
-      emit(chestOf(side), { count: 40, color: slot.color.getHex(), speed: 1.8, life: 1.1, size: 60, gravity: -0.8, radius: 0.6, lift: 0.8 });
-      await tween(0.7, (k) => { slot.actor.rotation.z = 1.3 * k; slot.actor.scale.setScalar(Math.max(0.01, 1 - k)); slot.lift = -0.3 * k; }, easeIn);
+      addShake(0.5);
+      // 1) Impacto vermelho/branco + anéis de choque
+      flash(side, 1.0);
+      burst(pos, 0xff5252, 3.6);
+      emit(pos, { count: 48, color: 0xff6b6b, speed: 3.4, life: 0.9, size: 75, up: 0.6 });
+      await tween(0.22, (k) => {
+        slot.offsetX = Math.sin(k * 28) * 0.14;
+        slot.squash = 1 - 0.2 * Math.sin(k * Math.PI);
+      });
+      // 2) Recolhimento estilo Pokébola com espiral e desintegração em partículas
+      emit(pos, { count: 55, color: slot.color.getHex(), speed: 2.2, life: 1.15, size: 65, gravity: -1.3, radius: 0.85, inward: true, lift: 1.0 });
+      groundPulse(side);
+      burst(pos, 0xffffff, 2.4);
+      await tween(0.68, (k) => {
+        slot.actor.rotation.z = 1.65 * k;
+        slot.actor.scale.setScalar(Math.max(0.01, 1 - k));
+        slot.lift = Math.sin(k * Math.PI) * 0.45 - 0.35 * k;
+        if (slot.current) {
+          slot.current.mats.forEach((m) => { m.uniforms.uFade.value = Math.max(0, 1 - k * 1.15); });
+        }
+      }, easeIn);
       slot.shadow.visible = false;
       disposeCreature(slot);
     }
@@ -455,10 +475,24 @@
       }
     }
 
-    function celebrate(side) {
+    async function celebrate(side) {
       const slot = slots[side];
-      emit(new THREE.Vector3(SIDES[side].x, 2.6, SIDES[side].z), { count: 90, color: 0xffd166, speed: 3.4, life: 1.5, size: 75, up: 0.9, gravity: 1.8 });
-      return tween(0.9, (k) => { slot.lift = Math.abs(Math.sin(k * Math.PI * 2)) * 0.7; });
+      const top = new THREE.Vector3(SIDES[side].x, 2.6, SIDES[side].z);
+      emit(top, { count: 110, color: 0xffd166, speed: 3.8, life: 1.7, size: 85, up: 0.95, gravity: 1.7 });
+      emit({ x: 0, y: 3.1, z: 0 }, { count: 80, color: 0x69f0ae, speed: 4.2, life: 1.8, size: 70, up: 0.7, gravity: 1.4 });
+      burst(top, 0xffd166, 4.2);
+      groundPulse(side);
+      setTimeout(() => {
+        emit(top, { count: 75, color: 0xffffff, speed: 3.2, life: 1.4, size: 70, up: 1.0, gravity: 1.5 });
+      }, 360);
+      await tween(1.15, (k) => { slot.lift = Math.abs(Math.sin(k * Math.PI * 3)) * 0.78; });
+    }
+    async function defeatEffect(side) {
+      const top = new THREE.Vector3(SIDES[side].x, 3.3, SIDES[side].z);
+      emit(top, { count: 75, color: 0x89a8ff, speed: 1.5, life: 1.6, size: 50, up: -0.6, gravity: 1.3, spread: 1.2 });
+      emit({ x: 0, y: 3.4, z: 0 }, { count: 60, color: 0x7c6b86, speed: 1.2, life: 1.7, size: 46, up: -0.7, gravity: 1.1, spread: 2.2 });
+      addShake(0.28);
+      await wait(950);
     }
 
     const projected = new THREE.Vector3();
@@ -546,7 +580,7 @@
       renderer.domElement.remove();
     }
 
-    return { setCreature, play, clearGuards, celebrate, screenPos, start, stop, dispose };
+    return { setCreature, play, clearGuards, celebrate, defeatEffect, screenPos, start, stop, dispose };
   }
 
   window.Arena3D = { create };

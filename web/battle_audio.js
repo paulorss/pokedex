@@ -162,26 +162,76 @@
       tone(440, 0.24, { type: "triangle", vol: 0.06, delay: 0.08, slideTo: 146.8 });
     },
     faint() {
-      tone(392, 0.45, { type: "square", vol: 0.085, slideTo: 98 });
-      noise(0.25, { vol: 0.08, delay: 0.15, highpass: 200, lowpass: 1200 });
+      // Som dramático de nocaute estilo Pokémon clássico + impacto de Pokébola
+      tone(520, 0.14, { type: "sawtooth", vol: 0.09, slideTo: 280 });
+      tone(340, 0.52, { type: "square", vol: 0.095, delay: 0.12, slideTo: 72 });
+      noise(0.36, { vol: 0.14, delay: 0.14, highpass: 140, lowpass: 1600 });
     },
     victory() {
-      // Fanfarra clássica de vitória Pokémon
+      // Fanfarra épica de vitória Pokémon
       const seq = [
-        [523.25, 0.11, 0.00], [523.25, 0.11, 0.13], [523.25, 0.11, 0.26],
-        [523.25, 0.28, 0.39], [415.30, 0.22, 0.70], [466.16, 0.22, 0.94],
-        [523.25, 0.16, 1.18], [466.16, 0.10, 1.38], [523.25, 0.55, 1.50],
+        [523.25, 0.10, 0.00], [523.25, 0.10, 0.12], [523.25, 0.10, 0.24],
+        [523.25, 0.26, 0.36], [415.30, 0.20, 0.65], [466.16, 0.20, 0.88],
+        [523.25, 0.15, 1.12], [466.16, 0.10, 1.30], [523.25, 0.24, 1.42],
+        [659.25, 0.24, 1.68], [783.99, 0.55, 1.94],
       ];
       seq.forEach(([f, d, at]) => {
-        tone(f, d, { type: "square", vol: 0.075, delay: at });
-        tone(f / 2, d, { type: "triangle", vol: 0.06, delay: at });
+        tone(f, d, { type: "square", vol: 0.08, delay: at });
+        tone(f / 2, d, { type: "triangle", vol: 0.065, delay: at });
       });
     },
     defeat() {
-      const seq = [[392, 0.18, 0], [349.23, 0.18, 0.2], [311.13, 0.22, 0.4], [261.63, 0.5, 0.64]];
-      seq.forEach(([f, d, at]) => tone(f, d, { type: "triangle", vol: 0.08, delay: at }));
+      // Cadência dramática de derrota (ida ao Centro Pokémon)
+      const seq = [[392, 0.20, 0], [349.23, 0.20, 0.22], [311.13, 0.24, 0.44], [277.18, 0.26, 0.70], [220, 0.65, 0.98]];
+      seq.forEach(([f, d, at]) => {
+        tone(f, d, { type: "triangle", vol: 0.09, delay: at });
+        tone(f * 0.5, d, { type: "sine", vol: 0.06, delay: at });
+      });
     },
   };
+
+  function playEmote(emoji = "") {
+    if (!sfxOn) return;
+    ensureCtx();
+    const e = String(emoji);
+    if (e.includes("🤡")) {
+      // Som cômico "Wah-Wah-Waaah"
+      tone(311.13, 0.18, { type: "sawtooth", vol: 0.075, delay: 0.00, slideTo: 293.66 });
+      tone(293.66, 0.18, { type: "sawtooth", vol: 0.075, delay: 0.20, slideTo: 277.18 });
+      tone(277.18, 0.18, { type: "sawtooth", vol: 0.075, delay: 0.40, slideTo: 261.63 });
+      tone(246.94, 0.48, { type: "sawtooth", vol: 0.08,  delay: 0.60, slideTo: 207.65 });
+    } else if (e.includes("😈") || e.includes("💀")) {
+      // Risadinha provocativa / tom sombrio
+      [622.25, 554.37, 493.88, 622.25, 440].forEach((f, i) =>
+        tone(f, 0.09, { type: "square", vol: 0.07, delay: i * 0.085 })
+      );
+      tone(130.8, 0.25, { type: "sawtooth", vol: 0.09, delay: 0.36, slideTo: 82 });
+    } else if (e.includes("👑") || e.includes("💪")) {
+      // Fanfarra de confiança / provocação estilosa
+      tone(523.25, 0.08, { type: "square", vol: 0.07, delay: 0 });
+      tone(659.25, 0.08, { type: "square", vol: 0.07, delay: 0.09 });
+      tone(783.99, 0.24, { type: "square", vol: 0.08, delay: 0.18 });
+      tone(1046.5, 0.30, { type: "triangle", vol: 0.08, delay: 0.18 });
+    } else if (e.includes("🥶")) {
+      // Tremor cristalino gelado
+      [1318, 1174, 1318, 1174, 1567].forEach((f, i) =>
+        tone(f, 0.07, { type: "sine", vol: 0.07, delay: i * 0.06 })
+      );
+    } else if (e.includes("😱") || e.includes("🫣")) {
+      // Susto animado
+      tone(440, 0.14, { type: "square", vol: 0.085, slideTo: 1240 });
+      tone(987, 0.16, { type: "triangle", vol: 0.075, delay: 0.15, slideTo: 620 });
+    } else if (e.includes("🔥") || e.includes("⚡")) {
+      // Estalo elétrico / chama intensa
+      noise(0.18, { vol: 0.11, highpass: 1100, lowpass: 6200 });
+      tone(740, 0.14, { type: "sawtooth", vol: 0.08, slideTo: 1480 });
+      tone(1108, 0.15, { type: "square", vol: 0.07, delay: 0.09, slideTo: 520 });
+    } else {
+      // Sino divertido (👏, 🫡, 🤝, ❤️)
+      tone(783.99, 0.09, { type: "triangle", vol: 0.08 });
+      tone(1046.5, 0.18, { type: "sine", vol: 0.08, delay: 0.09 });
+    }
+  }
 
   // Loop rítmico estilo batalha clássica (baixo + melodia chiptune suave)
   const BGM_LEAD = [330, 349, 392, 349, 330, 294, 330, 392, 440, 392, 349, 330, 294, 330, 349, 392];
@@ -233,6 +283,7 @@
     unlock,
     playCry,
     playSfx,
+    playEmote,
     startBgm,
     stopBgm,
     setSfx,
@@ -241,3 +292,4 @@
     isBgmEnabled: () => bgmOn,
   };
 })();
+

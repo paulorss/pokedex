@@ -244,21 +244,24 @@
               <div class="bench" id="bench" aria-label="Trocar de Pokémon"></div>
               <div class="quick-chat" id="quickChat" aria-label="Enviar emojis e mensagens rápidas">
                 <div class="quick-emojis">
-                  <button type="button" class="qc-emoji" data-emoji="🔥" title="Fogo!">🔥</button>
-                  <button type="button" class="qc-emoji" data-emoji="⚡" title="Choque!">⚡</button>
-                  <button type="button" class="qc-emoji" data-emoji="😎" title="Tranquilo">😎</button>
-                  <button type="button" class="qc-emoji" data-emoji="😱" title="Eita!">😱</button>
-                  <button type="button" class="qc-emoji" data-emoji="😂" title="Haha">😂</button>
-                  <button type="button" class="qc-emoji" data-emoji="👏" title="Palmas">👏</button>
-                  <button type="button" class="qc-emoji" data-emoji="💀" title="Nocaute">💀</button>
-                  <button type="button" class="qc-emoji" data-emoji="❤️" title="GG">❤️</button>
+                  <button type="button" class="qc-emoji" data-emoji="😈" title="Provocar!">😈</button>
+                  <button type="button" class="qc-emoji" data-emoji="🤡" title="Errou feio!">🤡</button>
+                  <button type="button" class="qc-emoji" data-emoji="💀" title="Já era!">💀</button>
+                  <button type="button" class="qc-emoji" data-emoji="🔥" title="Pegando fogo!">🔥</button>
+                  <button type="button" class="qc-emoji" data-emoji="⚡" title="Chocante!">⚡</button>
+                  <button type="button" class="qc-emoji" data-emoji="🥶" title="Gelou!">🥶</button>
+                  <button type="button" class="qc-emoji" data-emoji="👑" title="Rei da Arena!">👑</button>
+                  <button type="button" class="qc-emoji" data-emoji="🫣" title="Socorro!">🫣</button>
+                  <button type="button" class="qc-emoji" data-emoji="💪" title="Tá fácil!">💪</button>
+                  <button type="button" class="qc-emoji" data-emoji="🫡" title="Respeito!">🫡</button>
                 </div>
                 <div class="quick-msgs">
-                  <button type="button" class="qc-msg" data-emoji="👍" data-text="Boa jogada!">👍 Boa jogada!</button>
-                  <button type="button" class="qc-msg" data-emoji="🔥" data-text="Vamos nessa!">🔥 Vamos nessa!</button>
-                  <button type="button" class="qc-msg" data-emoji="⚡" data-text="Super eficaz!">⚡ Super eficaz!</button>
-                  <button type="button" class="qc-msg" data-emoji="😅" data-text="Por pouco!">😅 Por pouco!</button>
-                  <button type="button" class="qc-msg" data-emoji="🤝" data-text="Bom duelo!">🤝 Bom duelo!</button>
+                  <button type="button" class="qc-msg" data-emoji="😈" data-text="Só isso que você tem?">😈 Só isso?</button>
+                  <button type="button" class="qc-msg" data-emoji="🤡" data-text="Bela tentativa, campeão!">🤡 Bela tentativa!</button>
+                  <button type="button" class="qc-msg" data-emoji="🔥" data-text="Vai virar churrasco!">🔥 Vai queimar!</button>
+                  <button type="button" class="qc-msg" data-emoji="🥶" data-text="Já começou a tremer!">🥶 Gelou aí?</button>
+                  <button type="button" class="qc-msg" data-emoji="💀" data-text="Prepara o Centro Pokémon!">💀 Já era!</button>
+                  <button type="button" class="qc-msg" data-emoji="👑" data-text="Vitória garantida!">👑 É minha!</button>
                 </div>
               </div>
               <div class="arena-foot">
@@ -281,10 +284,16 @@
   <!-- ===== Diálogos do Duelo ===== -->
   <dialog id="duelResult" class="duel-dialog">
     <div class="duel-dialog-body">
+      <span id="resultBadge" class="result-badge"></span>
       <div id="resultArt" class="result-art"></div>
       <h2 id="resultTitle"></h2>
       <p id="resultMsg"></p>
-      <button id="btnBackToLobby" class="btn shoot" style="width:100%">Voltar ao salão</button>
+      <p id="resultSub" class="result-sub" hidden></p>
+      <div id="rematchBanner" class="rematch-banner" hidden></div>
+      <div class="dialog-actions">
+        <button id="btnRematch" class="btn shoot">Propor Revanche</button>
+        <button id="btnBackToLobby" class="btn ghost">Voltar ao salão</button>
+      </div>
     </div>
   </dialog>
   <dialog id="duelInvite" class="duel-dialog">
