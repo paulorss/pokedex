@@ -280,6 +280,20 @@ def record_battle_result(
         conn.commit()
 
 
+def get_all_trainers(limit: int = 100) -> list[dict[str, Any]]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, username, display_name, avatar_id, rating, wins, losses, draws, last_seen
+            FROM users
+            ORDER BY rating DESC, wins DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 def get_leaderboard(limit: int = 25) -> list[dict[str, Any]]:
     with get_connection() as conn:
         rows = conn.execute(
@@ -332,3 +346,4 @@ def get_recent_battles(user_id: int | None = None, limit: int = 15) -> list[dict
 
 
 init_db()
+

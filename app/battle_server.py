@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, WebSocket, WebSoc
 from pydantic import BaseModel
 
 from app.battle_db import (
+    get_all_trainers,
     get_leaderboard,
     get_recent_battles,
     get_user_by_id,
@@ -119,6 +120,16 @@ def api_online():
     return {"ok": True, "users": users_list}
 
 
+@router.get("/trainers")
+def api_trainers():
+    trainers = get_all_trainers(100)
+    for t in trainers:
+        uid = t["id"]
+        t["is_online"] = uid in online_users
+        t["in_battle"] = online_users[uid].get("in_battle", False) if uid in online_users else False
+    return {"ok": True, "trainers": trainers}
+
+
 @router.get("/history")
 def api_history(user_id: int | None = None):
     return {"ok": True, "history": get_recent_battles(user_id=user_id, limit=15)}
@@ -134,7 +145,7 @@ def api_stamina_info():
 
 
 async def broadcast_lobby():
-    """Transmite a lista atualizada de treinadores online para quem está no lobby."""
+    """Transmite a lista atualizada de treinadores cadastrados e status online para o lobby."""
     users_list = []
     for uid, data in online_users.items():
         u = data["user"]
@@ -147,7 +158,17 @@ async def broadcast_lobby():
             "in_battle": data.get("in_battle", False),
         })
 
-    msg = json.dumps({"type": "lobby_update", "online_users": users_list}, ensure_ascii=False)
+    trainers = get_all_trainers(100)
+    for t in trainers:
+        uid = t["id"]
+        t["is_online"] = uid in online_users
+        t["in_battle"] = online_users[uid].get("in_battle", False) if uid in online_users else False
+
+    msg = json.dumps({
+        "type": "lobby_update",
+        "online_users": users_list,
+        "trainers": trainers,
+    }, ensure_ascii=False)
     for uid, data in list(online_users.items()):
         if not data.get("in_battle"):
             try:
@@ -324,66 +345,133 @@ def finish_battle(room_id: str):
 async def handle_ws_message(user_id: int, user: dict[str, Any], ws: WebSocket, data: dict[str, Any]):
     action = data.get("action")
 
-    # 1. Desafiar outro usuário online
+    # 1. Desafiar outro usuário online ou cadastrado
     if action == "challenge":
         target_username = (data.get("target_username") or "").strip()
         target_id = data.get("target_id")
 
-        target_u = None
-        if target_id and int(target_id) in online_users:
-            target_u = online_users[int(target_id)]["user"]
+        target_db = None
+        if target_id:
+            target_db = get_user_by_id(int(target_id))
         elif target_username:
             target_db = get_user_by_username(target_username)
-            if target_db and target_db["id"] in online_users:
-                target_u = online_users[target_db["id"]]["user"]
 
-        if not target_u:
+        if not target_db:
             await ws.send_text(json.dumps({
                 "type": "error",
-                "message": f"Treinador '{target_username or target_id}' não está online no momento.",
+                "message": f"Treinador '{target_username or target_id}' não foi encontrado no cadastro.",
             }, ensure_ascii=False))
             return
 
-        if target_u["id"] == user_id:
+        if target_db["id"] == user_id:
             await ws.send_text(json.dumps({
                 "type": "error",
                 "message": "Você não pode desafiar a si mesmo!",
             }, ensure_ascii=False))
             return
 
-        target_status = online_users[target_u["id"]]
-        if target_status.get("in_battle"):
-            await ws.send_text(json.dumps({
-                "type": "error",
-                "message": f"{target_u['display_name']} já está em uma batalha no momento.",
-            }, ensure_ascii=False))
-            return
+        # Se o usuário cadastrado estiver online
+        if target_db["id"] in online_users:
+            target_status = online_users[target_db["id"]]
+            if target_status.get("in_battle"):
+                await ws.send_text(json.dumps({
+                    "type": "error",
+                    "message": f"{target_db['display_name']} já está em uma batalha no momento.",
+                }, ensure_ascii=False))
+                return
 
-        invite_id = secrets_token = str(uuid.uuid4())[:8]
-        pending_invites[invite_id] = {
-            "from_user": user,
-            "to_user": target_u,
+            invite_id = str(uuid.uuid4())[:8]
+            pending_invites[invite_id] = {
+                "from_user": user,
+                "to_user": target_db,
+            }
+
+            # Notifica o desafiado
+            await send_to_user(target_db["id"], {
+                "type": "challenge_received",
+                "invite_id": invite_id,
+                "challenger": {
+                    "id": user["id"],
+                    "username": user["username"],
+                    "display_name": user["display_name"],
+                    "avatar_id": user["avatar_id"],
+                    "rating": user["rating"],
+                },
+                "timeout": 30,
+            })
+
+            await ws.send_text(json.dumps({
+                "type": "challenge_sent",
+                "target": target_db["display_name"],
+                "invite_id": invite_id,
+            }, ensure_ascii=False))
+        else:
+            # Usuário cadastrado está offline no momento! Notifica para permitir batalha vs IA de seu perfil
+            await ws.send_text(json.dumps({
+                "type": "trainer_offline_prompt",
+                "target": {
+                    "id": target_db["id"],
+                    "username": target_db["username"],
+                    "display_name": target_db["display_name"],
+                    "avatar_id": target_db["avatar_id"],
+                    "rating": target_db["rating"],
+                },
+                "message": f"Treinador '{target_db['display_name']}' está offline no momento.",
+            }, ensure_ascii=False))
+
+    # 1.1 Desafiar perfil de treinador offline (IA representa o treinador)
+    elif action == "challenge_offline_bot":
+        target_id = data.get("target_id")
+        target_username = (data.get("target_username") or "").strip()
+        target_db = None
+        if target_id:
+            target_db = get_user_by_id(int(target_id))
+        elif target_username:
+            target_db = get_user_by_username(target_username)
+
+        bot_name = target_db["display_name"] if target_db else (target_username or "Treinador")
+        bot_avatar = target_db["avatar_id"] if target_db else 25
+        bot_rating = target_db["rating"] if target_db else 1000
+
+        room_id = f"ghost_{uuid.uuid4().hex[:10]}"
+        state = BattleState(
+            room_id=room_id,
+            p1_id=user["id"],
+            p1_name=user["display_name"],
+            p2_id=target_db["id"] if target_db else None,
+            p2_name=bot_name,
+            is_bot=True,
+        )
+
+        state.p2_team_ids = auto_pick_team([])
+        state.p2_locked = True
+
+        active_rooms[room_id] = {
+            "state": state,
+            "p1_ws": ws,
+            "p2_ws": None,
+            "task": None,
         }
 
-        # Notifica o desafiado
-        await send_to_user(target_u["id"], {
-            "type": "challenge_received",
-            "invite_id": invite_id,
-            "challenger": {
-                "id": user["id"],
-                "username": user["username"],
-                "display_name": user["display_name"],
-                "avatar_id": user["avatar_id"],
-                "rating": user["rating"],
-            },
-            "timeout": 30,
-        })
+        online_users[user["id"]]["in_battle"] = True
+        online_users[user["id"]]["room_id"] = room_id
 
         await ws.send_text(json.dumps({
-            "type": "challenge_sent",
-            "target": target_u["display_name"],
-            "invite_id": invite_id,
+            "type": "battle_matched",
+            "room_id": room_id,
+            "role": 1,
+            "opponent": {
+                "display_name": bot_name,
+                "username": target_db["username"] if target_db else "",
+                "rating": bot_rating,
+                "avatar_id": bot_avatar,
+                "is_bot": True,
+            },
+            "state": state.to_client_state(for_player=1),
         }, ensure_ascii=False))
+
+        active_rooms[room_id]["task"] = asyncio.create_task(run_draft_timer(room_id))
+        await broadcast_lobby()
 
     # 2. Aceitar desafio
     elif action == "accept_challenge":
@@ -683,3 +771,4 @@ async def websocket_battle_endpoint(websocket: WebSocket, token: str = ""):
                     state.logs.append(f"🔌 {user['display_name']} desconectou-se da partida.")
                     finish_battle(room_id)
         await broadcast_lobby()
+

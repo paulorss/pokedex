@@ -195,11 +195,11 @@
               <div>
                 <div class="online-list">
                   <h4>
-                    <span>🌐 Treinadores Online no Lobby</span>
-                    <span style="font-size:11px;color:#666">Tempo Real</span>
+                    <span>👥 Treinadores Cadastrados na Liga</span>
+                    <span style="font-size:11px;color:#666" id="trainersCountLabel">Clique para desafiar</span>
                   </h4>
                   <div id="onlineTrainersList">
-                    <div style="text-align:center;color:#666;font-size:13px;padding:12px">Carregando treinadores online...</div>
+                    <div style="text-align:center;color:#666;font-size:13px;padding:12px">Carregando treinadores...</div>
                   </div>
                 </div>
 
@@ -224,6 +224,9 @@
               <div class="draft-header">
                 <div>
                   <h3 style="margin:0 0 4px">⚔️ Escolha seus 3 Pokémon de Combate</h3>
+                  <div style="font-size:13px;color:#222;font-weight:700;margin-bottom:2px">
+                    Oponente: <span id="draftOpponentName" style="color:var(--red)">Oponente</span>
+                  </div>
                   <div id="draftOpponentStatus" style="font-size:12px;color:#444;font-weight:700">⏳ Oponente escolhendo...</div>
                 </div>
 
@@ -448,6 +451,19 @@
       </form>
 
       <div id="teachStatus" style="margin-top:10px;font-size:13px;text-align:center;font-weight:600"></div>
+    </div>
+  </dialog>
+
+  <!-- ===== Modal de Treinador Offline (Opção IA) ===== -->
+  <dialog id="offlineTrainerModal">
+    <div class="teach-box" style="text-align:center">
+      <img id="offlineTrainerAvatar" src="" style="width:64px;height:64px;border-radius:50%;border:3px solid #666;background:#fff;margin:0 auto 10px;" alt="" />
+      <h3 id="offlineTrainerTitle">Treinador Offline</h3>
+      <p id="offlineTrainerMsg">Este treinador está desconectado no momento. Deseja batalhar contra a equipe dele guiada por IA?</p>
+      <div style="display:flex;gap:10px;margin-top:14px">
+        <button id="btnChallengeOfflineBot" class="btn shoot" style="flex:1">🤖 Batalhar vs IA</button>
+        <button id="btnCancelOfflineModal" class="btn" style="flex:1;background:#555">Cancelar</button>
+      </div>
     </div>
   </dialog>
 

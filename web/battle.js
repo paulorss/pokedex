@@ -190,6 +190,7 @@
         updateTrainerProfile(msg.user);
         showView("battleLobby");
         loadLeaderboard();
+        loadTrainersList();
         break;
 
       case "auth_error":
@@ -199,7 +200,11 @@
         break;
 
       case "lobby_update":
-        renderOnlineTrainers(msg.online_users);
+        renderTrainersList(msg.trainers || msg.online_users);
+        break;
+
+      case "trainer_offline_prompt":
+        showOfflineTrainerModal(msg.target);
         break;
 
       case "challenge_received":
@@ -282,6 +287,7 @@
         connectWebSocket(token);
         showView("battleLobby");
         loadLeaderboard();
+        loadTrainersList();
       } else {
         localStorage.removeItem("pokedex_battle_token");
         showView("battleAuth");
@@ -332,41 +338,116 @@
     }
   }
 
-  function renderOnlineTrainers(users) {
+  async function loadTrainersList() {
+    try {
+      const res = await fetch("/api/battle/trainers");
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        renderTrainersList(data.trainers);
+      }
+    } catch (e) {
+      console.warn("Erro ao carregar lista de treinadores:", e);
+    }
+  }
+
+  function renderTrainersList(trainers) {
     const container = $("#onlineTrainersList");
     if (!container) return;
 
-    const others = users.filter((u) => !currentUser || u.id !== currentUser.id);
-    if (!others.length) {
-      container.innerHTML = `<div style="text-align:center;color:#666;font-size:13px;padding:12px">Nenhum outro treinador no lobby. Use o botão <b>Treinar contra IA</b>!</div>`;
+    if (!trainers || !trainers.length) {
+      container.innerHTML = `<div style="text-align:center;color:#666;font-size:13px;padding:12px">Nenhum treinador cadastrado ainda. Use o botão <b>Treinar contra IA</b>!</div>`;
       return;
     }
 
+    const others = trainers.filter((u) => !currentUser || u.id !== currentUser.id);
+    if ($("#trainersCountLabel")) {
+      const onlineCount = trainers.filter((t) => t.is_online).length;
+      $("#trainersCountLabel").textContent = `${onlineCount} Online • ${trainers.length} Cadastrados`;
+    }
+
     container.innerHTML = others
-      .map(
-        (u) => `
-      <div class="trainer-row">
-        <div class="trainer-row-left">
-          <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${u.avatar_id || 25}.png" alt="" />
-          <div>
-            <div style="font-weight:700;font-size:13px">${esc(u.display_name)}</div>
-            <div style="font-size:11px;color:#777">@${esc(u.username)} • 🏆 ${u.rating} PTS</div>
+      .map((u) => {
+        const isOnline = Boolean(u.is_online);
+        const inBattle = Boolean(u.in_battle);
+        const statusBadge = inBattle
+          ? `<span style="color:#d32f2f;font-weight:700;font-size:11px">⚔️ Em Batalha</span>`
+          : isOnline
+          ? `<span style="color:#2e7d32;font-weight:700;font-size:11px">🟢 Online</span>`
+          : `<span style="color:#777;font-size:11px">⚪ Offline</span>`;
+
+        let actionBtn = "";
+        if (inBattle) {
+          actionBtn = `<button class="btn-challenge" disabled style="background:#999;font-size:11px">Em Batalha</button>`;
+        } else if (isOnline) {
+          actionBtn = `<button class="btn-challenge btn-desafiar-online" data-uid="${u.id}" data-uname="${esc(u.username)}" data-name="${esc(u.display_name || u.username)}">⚔️ Desafiar</button>`;
+        } else {
+          actionBtn = `<button class="btn-challenge btn-desafiar-bot" data-uid="${u.id}" data-uname="${esc(u.username)}" data-name="${esc(u.display_name || u.username)}" style="background:#455a64;font-size:11px">🤖 Desafiar IA</button>`;
+        }
+
+        return `
+          <div class="trainer-row">
+            <div class="trainer-row-left">
+              <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${u.avatar_id || 25}.png" alt="" />
+              <div>
+                <div style="font-weight:700;font-size:13px">${esc(u.display_name || u.username)}</div>
+                <div style="font-size:11px;color:#666">@${esc(u.username)} • 🏆 ${u.rating} PTS • ${statusBadge}</div>
+              </div>
+            </div>
+            <div>${actionBtn}</div>
           </div>
-        </div>
-        <button class="btn-challenge" ${u.in_battle ? "disabled" : ""} data-uid="${u.id}">
-          ${u.in_battle ? "⚔️ Em Batalha" : "⚔️ Desafiar"}
-        </button>
-      </div>
-    `
-      )
+        `;
+      })
       .join("");
 
-    container.querySelectorAll(".btn-challenge").forEach((btn) => {
+    container.querySelectorAll(".btn-desafiar-online").forEach((btn) => {
       btn.addEventListener("click", () => {
         const uid = Number(btn.dataset.uid);
         if (uid) sendWs({ action: "challenge", target_id: uid });
       });
     });
+
+    container.querySelectorAll(".btn-desafiar-bot").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const uid = Number(btn.dataset.uid);
+        const target = trainers.find((t) => t.id === uid) || {
+          id: uid,
+          username: btn.dataset.uname,
+          display_name: btn.dataset.name,
+        };
+        showOfflineTrainerModal(target);
+      });
+    });
+  }
+
+  function showOfflineTrainerModal(target) {
+    const modal = $("#offlineTrainerModal");
+    if (!modal) {
+      if (confirm(`O treinador ${target.display_name || target.username} está offline. Deseja batalhar contra a equipe dele guiada por IA?`)) {
+        sendWs({ action: "challenge_offline_bot", target_id: target.id, target_username: target.username });
+      }
+      return;
+    }
+    const name = target.display_name || target.username || "Treinador";
+    if ($("#offlineTrainerAvatar")) {
+      $("#offlineTrainerAvatar").src = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${target.avatar_id || 25}.png`;
+    }
+    if ($("#offlineTrainerTitle")) {
+      $("#offlineTrainerTitle").textContent = `${name} está Offline`;
+    }
+    if ($("#offlineTrainerMsg")) {
+      $("#offlineTrainerMsg").innerHTML = `O treinador <b>${esc(name)}</b> (@${esc(target.username || "")}) está desconectado no momento.<br>Deseja iniciar uma batalha contra a <b>equipe de ${esc(name)} guiada por IA</b> agora mesmo?`;
+    }
+
+    $("#btnChallengeOfflineBot").onclick = () => {
+      modal.close();
+      sendWs({ action: "challenge_offline_bot", target_id: target.id, target_username: target.username });
+    };
+
+    $("#btnCancelOfflineModal").onclick = () => {
+      modal.close();
+    };
+
+    modal.showModal();
   }
 
   function showChallengePrompt(msg) {
@@ -407,9 +488,12 @@
   // ==================== SALA DE ESCOLHA (DRAFT ROOM - 60s) ====================
   function enterDraftRoom(msg) {
     showView("battleDraft");
-    $("#draftTimerVal").textContent = "60s";
-    $("#draftTimerBox").classList.remove("urgent");
-    $("#draftOpponentName").textContent = msg.opponent.display_name || msg.opponent.username;
+    if ($("#draftTimerVal")) $("#draftTimerVal").textContent = "60s";
+    $("#draftTimerBox")?.classList.remove("urgent");
+
+    const oppName = (msg.opponent && (msg.opponent.display_name || msg.opponent.username)) || "Oponente";
+    if ($("#draftOpponentName")) $("#draftOpponentName").textContent = oppName;
+    if ($("#draftOpponentStatus")) $("#draftOpponentStatus").textContent = "⏳ Oponente escolhendo...";
 
     // Reseta equipe
     selectedTeam = [];
@@ -543,7 +627,7 @@
       const isSelected = selectedTeam.some((x) => x.id === p.id);
       return `
         <div class="draft-card-item ${isSelected ? "selected" : ""}" data-pid="${p.id}">
-          <img src="${p.sprite || `/img/sprites/${p.id}.png`}" loading="lazy" alt="" />
+          <img src="${p.sprite || `/img/sprites/${p.id}.png`}" alt="" />
           <div class="item-name">${esc(p.name)}</div>
           <div class="item-cost">⚡ ${p.stamina_cost || 500} SP</div>
         </div>
@@ -894,6 +978,7 @@
         connectWebSocket(data.user.token);
         showView("battleLobby");
         loadLeaderboard();
+        loadTrainersList();
       } catch (err) {
         msg.textContent = `❌ ${err.message}`;
       }
@@ -923,6 +1008,7 @@
         connectWebSocket(data.user.token);
         showView("battleLobby");
         loadLeaderboard();
+        loadTrainersList();
       } catch (err) {
         msg.textContent = `❌ ${err.message}`;
       }
@@ -949,6 +1035,13 @@
         return;
       }
       sendWs({ action: "challenge", target_username: target });
+    });
+
+    $("#challengeDirectInput")?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        $("#btnChallengeDirect")?.click();
+      }
     });
 
     // Filtros da tela de Draft
@@ -1018,3 +1111,4 @@
     initAuth();
   });
 })();
+

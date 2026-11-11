@@ -662,3 +662,4 @@ class BattleState:
             "winner_name": (self.p1_name if self.winner == 1 else self.p2_name) if self.winner else None,
             "logs": self.logs[-8:],  # Últimos logs relevantes
         }
+
