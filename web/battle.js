@@ -138,6 +138,7 @@
     PANELS.forEach((p) => { $(`#${p}`).hidden = p !== id; });
     if (S.arena) { if (id === "duelArena" && battleTabActive()) S.arena.start(); else S.arena.stop(); }
     if (id === "duelDraft") syncStage(); else disposeStage();
+    if (window.AppSound) window.AppSound.refresh();
   }
   const battleTabActive = () => $("#view-battle").classList.contains("active");
 
@@ -1067,14 +1068,14 @@
       sfx("unlock");
       const next = !(window.BattleAudio?.isSfxEnabled?.() ?? true);
       sfx("setSfx", next);
-      if (next && !$("#duelArena").hidden && window.BattleAudio?.isBgmEnabled?.()) sfx("startBgm");
+      if (window.AppSound) window.AppSound.refresh();
       updateAudioButtons();
     });
     if ($("#btnMusicToggle")) $("#btnMusicToggle").addEventListener("click", () => {
       sfx("unlock");
       const next = !(window.BattleAudio?.isBgmEnabled?.() ?? true);
       sfx("setBgm", next);
-      if (next && !$("#duelArena").hidden && window.BattleAudio?.isSfxEnabled?.()) sfx("startBgm");
+      if (window.AppSound) window.AppSound.refresh();
       updateAudioButtons();
     });
     document.addEventListener("keydown", (e) => {
@@ -1121,6 +1122,7 @@
       bSfx.classList.toggle("off", !sfxOn);
       $("span", bSfx).textContent = sfxOn ? "Som" : "Mudo";
     }
+    if (window.AppSound) window.AppSound.renderToggle();
     if (bBgm) {
       bBgm.classList.toggle("off", !sfxOn || !bgmOn);
       $("span", bBgm).textContent = (sfxOn && bgmOn) ? "Música" : "Música off";

@@ -183,11 +183,23 @@ function speak(p) {
   speechSynthesis.speak(u);
 }
 
+const UNSURE_CONFIDENCE = 0.4;
+let lastResultId = null;
 async function showResult(id, confidence) {
   const p = await getPokemon(id);
   const el = $("#result");
   el.innerHTML = renderDetail(p, confidence);
   bindDetail(el, p);
+  announceResult(p, confidence);
+}
+/** Som do reconhecimento: só quando o Pokémon muda, para o auto-scan não repetir a cada leitura. */
+function announceResult(p, confidence) {
+  const audio = window.BattleAudio;
+  if (!audio || p.id === lastResultId) return;
+  lastResultId = p.id;
+  if (confidence != null && confidence < UNSURE_CONFIDENCE) { audio.playSfx("unsure"); return; }
+  audio.playSfx("found");
+  setTimeout(() => audio.playCry(p.id, p.name, false), 420);
 }
 
 async function openModal(id) {
@@ -201,6 +213,37 @@ async function openModal(id) {
 }
 
 /* ---------------- câmera ---------------- */
+const CAM_IDLE_MSG = "Toque em “Ligar câmera” ou envie uma foto";
+/* a câmera só fica ligada na tela do Scanner: guarda se deve religar ao voltar */
+let resumeCamera = false;
+const scannerActive = () => $("#view-scanner").classList.contains("active");
+
+async function cameraAlreadyAllowed() {
+  try {
+    const status = await navigator.permissions.query({ name: "camera" });
+    return status.state === "granted";
+  } catch (_) {
+    return false; // navegador sem consulta de permissão: espera o toque no botão
+  }
+}
+/** Liga a câmera ao entrar no Scanner, sem abrir pedido de permissão por conta própria. */
+async function enterScanner() {
+  if (stream || document.hidden) return;
+  if (resumeCamera || await cameraAlreadyAllowed()) {
+    if (scannerActive() && !document.hidden) startCamera();
+  }
+}
+function leaveScanner() {
+  if (!stream) return;
+  resumeCamera = true;
+  stopCamera();
+}
+document.addEventListener("viewchange", (e) => { if (e.detail === "scanner") enterScanner(); else leaveScanner(); });
+document.addEventListener("visibilitychange", () => {
+  if (!scannerActive()) return;
+  if (document.hidden) leaveScanner(); else enterScanner();
+});
+
 async function startCamera() {
   stopCamera();
   if (!navigator.mediaDevices?.getUserMedia) {
@@ -233,6 +276,9 @@ function setCamButton(isOn) {
 function stopCamera() {
   stream?.getTracks().forEach((t) => t.stop());
   stream = null;
+  $("#video").srcObject = null;
+  $("#camMsg").hidden = false;
+  $("#camMsg").textContent = CAM_IDLE_MSG;
   $("#btnShot").disabled = true;
   setCamButton(false);
   $("#btnFlip").style.display = "none";
@@ -361,7 +407,9 @@ window.addEventListener("hashchange", () => {
   if (window.location.hash) switchTab(window.location.hash.replace("#", ""));
 });
 
-$("#btnCam").addEventListener("click", () => (stream ? stopCamera() : startCamera()));
+$("#btnCam").addEventListener("click", () => {
+  if (stream) { stopCamera(); resumeCamera = false; } else startCamera();
+});
 $("#btnFlip").addEventListener("click", () => { facing = facing === "environment" ? "user" : "environment"; startCamera(); });
 $("#btnShot").addEventListener("click", async () => {
   const blob = await grabFrame();
@@ -585,3 +633,4 @@ async function loadInitialData() {
   }
 })();
 
+if (scannerActive()) enterScanner();

@@ -10,8 +10,8 @@
   <title>Pokédex Local</title>
   <link rel="icon" href="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png" />
   <link rel="stylesheet" href="style.css" />
-  <link rel="stylesheet" href="battle.css?v=20261113" />
-  <link rel="stylesheet" href="battle_aaa.css?v=20261113" />
+  <link rel="stylesheet" href="battle.css?v=20261115" />
+  <link rel="stylesheet" href="battle_aaa.css?v=20261115" />
 </head>
 <body>
   <!-- ===== Ícones (um único traço, 24×24) ===== -->
@@ -51,6 +51,7 @@
         <button class="tab active" data-view="scanner" aria-current="page"><svg class="ic" aria-hidden="true"><use href="#i-camera"/></svg>Scanner</button>
         <button class="tab" data-view="browse"><svg class="ic" aria-hidden="true"><use href="#i-book"/></svg>Pokédex</button>
         <button class="tab" data-view="battle"><svg class="ic" aria-hidden="true"><use href="#i-duel"/></svg>Duelo</button>
+        <button class="tab tab-icon" id="btnSound" type="button" aria-pressed="true" aria-label="Silenciar som e música" title="Silenciar som e música"><svg class="ic" aria-hidden="true"><use href="#i-speaker"/></svg></button>
         <button class="tab" id="btnLock" style="display:none" aria-label="Bloquear Pokédex" title="Bloquear Pokédex"><svg class="ic" aria-hidden="true"><use href="#i-lock"/></svg></button>
       </nav>
     </header>
@@ -403,13 +404,14 @@
     </div>
   </dialog>
 
-  <script src="app.js?v=20261113"></script>
+  <script src="app.js?v=20261115"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" defer></script>
-  <script src="battle3d.js?v=20261113" defer></script>
-  <script src="select3d.js?v=20261113" defer></script>
-  <script src="dex_stage.js?v=20261113" defer></script>
-  <script src="evo_stage.js?v=20261113" defer></script>
-  <script src="battle_audio.js?v=20261113" defer></script>
-  <script src="battle.js?v=20261113" defer></script>
+  <script src="battle3d.js?v=20261115" defer></script>
+  <script src="select3d.js?v=20261115" defer></script>
+  <script src="dex_stage.js?v=20261115" defer></script>
+  <script src="evo_stage.js?v=20261115" defer></script>
+  <script src="battle_audio.js?v=20261115" defer></script>
+  <script src="app_sound.js?v=20261115" defer></script>
+  <script src="battle.js?v=20261115" defer></script>
 </body>
 </html>

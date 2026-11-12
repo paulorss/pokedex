@@ -115,6 +115,40 @@
   }
 
   const SFX = {
+    /* --- interface --- */
+    hover() {
+      tone(1568, 0.03, { type: "sine", vol: 0.022 });
+    },
+    select() {
+      tone(784, 0.05, { type: "square", vol: 0.035 });
+      tone(1175, 0.08, { type: "square", vol: 0.035, delay: 0.045 });
+    },
+    tab() {
+      tone(523.25, 0.06, { type: "triangle", vol: 0.05, slideTo: 1046.5 });
+      noise(0.07, { vol: 0.02, highpass: 3000, lowpass: 9000 });
+    },
+    open() {
+      tone(659.25, 0.06, { type: "square", vol: 0.04 });
+      tone(987.77, 0.06, { type: "square", vol: 0.04, delay: 0.055 });
+      tone(1318.5, 0.12, { type: "triangle", vol: 0.05, delay: 0.11 });
+    },
+    back() {
+      tone(880, 0.06, { type: "triangle", vol: 0.045, slideTo: 440 });
+    },
+    scan() {
+      tone(1320, 0.05, { type: "sine", vol: 0.05 });
+      tone(1760, 0.16, { type: "sine", vol: 0.05, delay: 0.07, slideTo: 2640 });
+      noise(0.12, { vol: 0.025, delay: 0.05, highpass: 4000, lowpass: 10000 });
+    },
+    found() {
+      [659.25, 783.99, 1046.5, 1318.5].forEach((n, i) => tone(n, 0.12, { type: "square", vol: 0.045, delay: i * 0.07 }));
+      tone(1567.98, 0.3, { type: "triangle", vol: 0.055, delay: 0.3 });
+    },
+    unsure() {
+      tone(392, 0.12, { type: "triangle", vol: 0.05 });
+      tone(311.13, 0.2, { type: "triangle", vol: 0.05, delay: 0.12 });
+    },
+    /* --- duelo --- */
     click() {
       tone(880, 0.05, { type: "square", vol: 0.045 });
       tone(1320, 0.06, { type: "square", vol: 0.04, delay: 0.035 });
@@ -244,52 +278,126 @@
     }
   }
 
-  /* Tema de batalha original em chiptune: melodia sincopada, baixo saltitante e bateria.
-   * Oito compassos de 16 semicolcheias (parte A: C–Am–F–G; parte B: F–G–Em–Am/G).
-   * As notas são agendadas no relógio do AudioContext para o ritmo não oscilar. */
-  const BGM_STEP_SECONDS = 0.11;
+  /* Trilhas originais em chiptune, uma por tela do aplicativo. Cada trilha tem quatro ou
+   * oito compassos de 16 semicolcheias: melodia, baixo (multiplicador da fundamental por
+   * passo) e bateria. As notas são agendadas no relógio do AudioContext para o ritmo não oscilar. */
   const BGM_LOOKAHEAD_SECONDS = 0.25;
   const BGM_TICK_MS = 60;
   const STEPS_PER_BAR = 16;
   const NOTE_INDEX = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
-  const noteFreq = (name) => 440 * Math.pow(2, (NOTE_INDEX[name[0]] + (Number(name.slice(1)) + 1) * 12 - 69) / 12);
+  function noteFreq(name) {
+    const sharp = name[1] === "#" ? 1 : 0;
+    const octave = Number(name.slice(1 + sharp));
+    return 440 * Math.pow(2, (NOTE_INDEX[name[0]] + sharp + (octave + 1) * 12 - 69) / 12);
+  }
   const bar = (text) => text.trim().split(/\s+/).map((n) => (n === "-" ? 0 : noteFreq(n)));
-  const BGM_LEAD = [
-    "C5 - E5 G5 - E5 - C6 - B5 - G5 A5 - G5 -",
-    "A5 - C6 A5 - E5 - A5 - G5 - E5 D5 - E5 -",
-    "F5 - A5 C6 - A5 - F5 - A5 - C6 D6 - C6 -",
-    "B5 - G5 - D6 - B5 - G5 A5 B5 - D6 - - -",
-    "A5 A5 - F5 - A5 C6 - C6 - A5 - F5 - A5 -",
-    "B5 B5 - G5 - B5 D6 - D6 - B5 - G5 - B5 -",
-    "G5 - E5 - B5 - G5 - E6 - D6 - B5 - G5 -",
-    "A5 - C6 - E6 - C6 - D6 - B5 - G5 A5 B5 -",
-  ].flatMap(bar);
-  const BGM_ROOTS = ["C3", "A2", "F2", "G2", "F2", "G2", "E2", "A2"].map(noteFreq);
-  /* multiplicador da fundamental por semicolcheia: 1 = tônica, 2 = oitava, 1.5 = quinta, 0 = pausa */
-  const BGM_BASS_SHAPE = [1, 0, 1, 0, 2, 0, 1, 0, 1, 0, 1, 0, 2, 0, 1.5, 0];
-  const BGM_KICK = new Set([0, 8, 10]);
-  const BGM_SNARE = new Set([4, 12]);
+  const EVEN_STEPS = [0, 2, 4, 6, 8, 10, 12, 14];
+  function track(def) {
+    return {
+      ...def,
+      lead: def.lead.flatMap(bar),
+      roots: def.roots.map(noteFreq),
+      kick: new Set(def.kick), snare: new Set(def.snare), hat: new Set(def.hat),
+    };
+  }
+  const TRACKS = {
+    /* Scanner: calmo e curioso, arpejos suaves (Am–F–C–G). */
+    scanner: track({
+      step: 0.16, leadType: "triangle", leadVol: 0.03, bassVol: 0.035, drumVol: 0.5,
+      lead: [
+        "A4 - C5 - E5 - C5 - A4 - E5 - - - C5 -",
+        "F4 - A4 - C5 - A4 - F4 - C5 - - - A4 -",
+        "C5 - E5 - G5 - E5 - C5 - G5 - - - E5 -",
+        "G4 - B4 - D5 - B4 - G4 - D5 - E5 - D5 -",
+      ],
+      roots: ["A2", "F2", "C3", "G2"],
+      bass: [1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+      kick: [0], snare: [], hat: [4, 12],
+    }),
+    /* Pokédex: passeio alegre e saltitante (G–Em–C–D). */
+    pokedex: track({
+      step: 0.14, leadType: "square", leadVol: 0.02, bassVol: 0.04, drumVol: 0.7,
+      lead: [
+        "G5 - B5 - D6 - B5 G5 - A5 B5 - A5 - G5 -",
+        "E5 - G5 - B5 - G5 E5 - G5 A5 - G5 - E5 -",
+        "C5 - E5 - G5 - E5 C6 - B5 A5 - G5 - E5 -",
+        "D5 - A5 - D6 - A5 F#5 - A5 B5 - A5 - D6 -",
+      ],
+      roots: ["G2", "E2", "C3", "D3"],
+      bass: [1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1.5, 0],
+      kick: [0, 8], snare: [4, 12], hat: EVEN_STEPS,
+    }),
+    /* Salão do Duelo: levada confiante em andamento médio (Em–C–D–Em). */
+    lobby: track({
+      step: 0.13, leadType: "square", leadVol: 0.022, bassVol: 0.045, drumVol: 0.85,
+      lead: [
+        "E5 - - G5 - - B5 - A5 - G5 - E5 - D5 -",
+        "E5 - - G5 - - C6 - B5 - G5 - E5 - G5 -",
+        "D5 - - F#5 - - A5 - D6 - A5 - F#5 - A5 -",
+        "E5 - G5 - B5 - E6 - D6 - B5 - G5 - - -",
+      ],
+      roots: ["E2", "C3", "D3", "E2"],
+      bass: [1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 2, 0],
+      kick: [0, 6, 10], snare: [4, 12], hat: EVEN_STEPS,
+    }),
+    /* Seleção de lutadores: rápida e tensa, bumbo em todos os tempos (Am–F–G–Am). */
+    select: track({
+      step: 0.105, leadType: "square", leadVol: 0.024, bassVol: 0.05, drumVol: 1,
+      lead: [
+        "A5 - A5 C6 - A5 E6 - D6 - C6 - A5 - C6 -",
+        "F5 - F5 A5 - F5 C6 - B5 - A5 - F5 - A5 -",
+        "G5 - G5 B5 - G5 D6 - C6 - B5 - G5 - B5 -",
+        "A5 - C6 - E6 - A5 - E6 D6 C6 - B5 - G#5 -",
+      ],
+      roots: ["A2", "F2", "G2", "A2"],
+      bass: [1, 0, 2, 0, 1, 0, 2, 0, 1, 0, 2, 0, 1, 0, 2, 0],
+      kick: [0, 4, 8, 12], snare: [4, 12], hat: [2, 6, 10, 14],
+    }),
+    /* Batalha: melodia sincopada e baixo saltitante (A: C–Am–F–G; B: F–G–Em–Am). */
+    battle: track({
+      step: 0.11, leadType: "square", leadVol: 0.026, bassVol: 0.05, drumVol: 1,
+      lead: [
+        "C5 - E5 G5 - E5 - C6 - B5 - G5 A5 - G5 -",
+        "A5 - C6 A5 - E5 - A5 - G5 - E5 D5 - E5 -",
+        "F5 - A5 C6 - A5 - F5 - A5 - C6 D6 - C6 -",
+        "B5 - G5 - D6 - B5 - G5 A5 B5 - D6 - - -",
+        "A5 A5 - F5 - A5 C6 - C6 - A5 - F5 - A5 -",
+        "B5 B5 - G5 - B5 D6 - D6 - B5 - G5 - B5 -",
+        "G5 - E5 - B5 - G5 - E6 - D6 - B5 - G5 -",
+        "A5 - C6 - E6 - C6 - D6 - B5 - G5 A5 B5 -",
+      ],
+      roots: ["C3", "A2", "F2", "G2", "F2", "G2", "E2", "A2"],
+      bass: [1, 0, 1, 0, 2, 0, 1, 0, 1, 0, 1, 0, 2, 0, 1.5, 0],
+      kick: [0, 8, 10], snare: [4, 12], hat: EVEN_STEPS,
+    }),
+  };
   let bgmNextTime = 0;
+  let bgmTrack = null;
 
-  function scheduleBgmStep(step, delay) {
+  function scheduleBgmStep(t, step, delay) {
     const pos = step % STEPS_PER_BAR;
-    const lead = BGM_LEAD[step % BGM_LEAD.length];
-    const bass = BGM_ROOTS[Math.floor(step / STEPS_PER_BAR) % BGM_ROOTS.length] * BGM_BASS_SHAPE[pos];
+    const lead = t.lead[step % t.lead.length];
+    const bass = t.roots[Math.floor(step / STEPS_PER_BAR) % t.roots.length] * t.bass[pos];
     if (lead) {
-      tone(lead, BGM_STEP_SECONDS * 1.5, { type: "square", vol: 0.026, delay });
-      tone(lead * 2.005, BGM_STEP_SECONDS, { type: "square", vol: 0.007, delay });
+      tone(lead, t.step * 1.5, { type: t.leadType, vol: t.leadVol, delay });
+      tone(lead * 2.005, t.step, { type: "square", vol: t.leadVol * 0.27, delay });
     }
-    if (bass) tone(bass, BGM_STEP_SECONDS * 1.7, { type: "triangle", vol: 0.05, delay });
-    if (BGM_KICK.has(pos)) tone(150, 0.1, { type: "sine", vol: 0.06, delay, slideTo: 48 });
-    if (BGM_SNARE.has(pos)) noise(0.09, { vol: 0.03, delay, highpass: 900, lowpass: 7000 });
-    if (pos % 2 === 0) noise(0.03, { vol: 0.01, delay, highpass: 6000, lowpass: 12000 });
+    if (bass) tone(bass, t.step * 1.7, { type: "triangle", vol: t.bassVol, delay });
+    if (t.kick.has(pos)) tone(150, 0.1, { type: "sine", vol: 0.06 * t.drumVol, delay, slideTo: 48 });
+    if (t.snare.has(pos)) noise(0.09, { vol: 0.03 * t.drumVol, delay, highpass: 900, lowpass: 7000 });
+    if (t.hat.has(pos)) noise(0.03, { vol: 0.01 * t.drumVol, delay, highpass: 6000, lowpass: 12000 });
   }
 
-  function startBgm() {
+  /** Toca a trilha pedida; se ela já estiver tocando, não reinicia. */
+  function startBgm(name = "battle") {
+    const next = TRACKS[name] ? name : "battle";
+    if (bgmTimer && bgmTrack === next) return;
     stopBgm();
     if (!sfxOn || !bgmOn) return;
     const ac = ensureCtx();
     if (!ac) return;
+    const t = TRACKS[next];
+    bgmTrack = next;
     bgmStep = 0;
     bgmNextTime = ac.currentTime + 0.08;
     bgmTimer = setInterval(() => {
@@ -297,8 +405,8 @@
       const now = ac.currentTime;
       if (bgmNextTime < now) bgmNextTime = now + 0.05;
       while (bgmNextTime < now + BGM_LOOKAHEAD_SECONDS) {
-        scheduleBgmStep(bgmStep, bgmNextTime - now);
-        bgmNextTime += BGM_STEP_SECONDS;
+        scheduleBgmStep(t, bgmStep, bgmNextTime - now);
+        bgmNextTime += t.step;
         bgmStep++;
       }
     }, BGM_TICK_MS);
@@ -309,6 +417,7 @@
       clearInterval(bgmTimer);
       bgmTimer = null;
     }
+    bgmTrack = null;
   }
 
   function playSfx(name) {

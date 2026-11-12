@@ -289,3 +289,8 @@
 .evo-stage .si-name { font-size: clamp(20px, 3.4vw, 34px); }
 .evo button.on-stage { background: #fff; box-shadow: 0 0 0 2px var(--type, #a8b2bd), 0 0 14px var(--type, #a8b2bd); transform: translateY(-2px); }
 @media (max-width: 700px) { .evo-stage { height: 220px; } }
+
+/* ---------- botão de som no topo ---------- */
+.tab.tab-icon { padding-inline: 10px; }
+.tab.tab-icon.off { opacity: .55; text-decoration: line-through; }
+.tab.tab-icon.off .ic { opacity: .6; }
