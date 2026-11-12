@@ -244,24 +244,64 @@
     }
   }
 
-  // Loop rítmico estilo batalha clássica (baixo + melodia chiptune suave)
-  const BGM_LEAD = [330, 349, 392, 349, 330, 294, 330, 392, 440, 392, 349, 330, 294, 330, 349, 392];
-  const BGM_BASS = [165, 165, 196, 196, 147, 147, 165, 196, 220, 220, 175, 175, 147, 147, 196, 165];
+  /* Tema de batalha original em chiptune: melodia sincopada, baixo saltitante e bateria.
+   * Oito compassos de 16 semicolcheias (parte A: C–Am–F–G; parte B: F–G–Em–Am/G).
+   * As notas são agendadas no relógio do AudioContext para o ritmo não oscilar. */
+  const BGM_STEP_SECONDS = 0.11;
+  const BGM_LOOKAHEAD_SECONDS = 0.25;
+  const BGM_TICK_MS = 60;
+  const STEPS_PER_BAR = 16;
+  const NOTE_INDEX = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+  const noteFreq = (name) => 440 * Math.pow(2, (NOTE_INDEX[name[0]] + (Number(name.slice(1)) + 1) * 12 - 69) / 12);
+  const bar = (text) => text.trim().split(/\s+/).map((n) => (n === "-" ? 0 : noteFreq(n)));
+  const BGM_LEAD = [
+    "C5 - E5 G5 - E5 - C6 - B5 - G5 A5 - G5 -",
+    "A5 - C6 A5 - E5 - A5 - G5 - E5 D5 - E5 -",
+    "F5 - A5 C6 - A5 - F5 - A5 - C6 D6 - C6 -",
+    "B5 - G5 - D6 - B5 - G5 A5 B5 - D6 - - -",
+    "A5 A5 - F5 - A5 C6 - C6 - A5 - F5 - A5 -",
+    "B5 B5 - G5 - B5 D6 - D6 - B5 - G5 - B5 -",
+    "G5 - E5 - B5 - G5 - E6 - D6 - B5 - G5 -",
+    "A5 - C6 - E6 - C6 - D6 - B5 - G5 A5 B5 -",
+  ].flatMap(bar);
+  const BGM_ROOTS = ["C3", "A2", "F2", "G2", "F2", "G2", "E2", "A2"].map(noteFreq);
+  /* multiplicador da fundamental por semicolcheia: 1 = tônica, 2 = oitava, 1.5 = quinta, 0 = pausa */
+  const BGM_BASS_SHAPE = [1, 0, 1, 0, 2, 0, 1, 0, 1, 0, 1, 0, 2, 0, 1.5, 0];
+  const BGM_KICK = new Set([0, 8, 10]);
+  const BGM_SNARE = new Set([4, 12]);
+  let bgmNextTime = 0;
+
+  function scheduleBgmStep(step, delay) {
+    const pos = step % STEPS_PER_BAR;
+    const lead = BGM_LEAD[step % BGM_LEAD.length];
+    const bass = BGM_ROOTS[Math.floor(step / STEPS_PER_BAR) % BGM_ROOTS.length] * BGM_BASS_SHAPE[pos];
+    if (lead) {
+      tone(lead, BGM_STEP_SECONDS * 1.5, { type: "square", vol: 0.026, delay });
+      tone(lead * 2.005, BGM_STEP_SECONDS, { type: "square", vol: 0.007, delay });
+    }
+    if (bass) tone(bass, BGM_STEP_SECONDS * 1.7, { type: "triangle", vol: 0.05, delay });
+    if (BGM_KICK.has(pos)) tone(150, 0.1, { type: "sine", vol: 0.06, delay, slideTo: 48 });
+    if (BGM_SNARE.has(pos)) noise(0.09, { vol: 0.03, delay, highpass: 900, lowpass: 7000 });
+    if (pos % 2 === 0) noise(0.03, { vol: 0.01, delay, highpass: 6000, lowpass: 12000 });
+  }
 
   function startBgm() {
     stopBgm();
     if (!sfxOn || !bgmOn) return;
-    ensureCtx();
+    const ac = ensureCtx();
+    if (!ac) return;
     bgmStep = 0;
+    bgmNextTime = ac.currentTime + 0.08;
     bgmTimer = setInterval(() => {
-      if (!sfxOn || !bgmOn || document.hidden) return;
-      const idx = bgmStep % BGM_LEAD.length;
-      const fLead = BGM_LEAD[idx];
-      const fBass = BGM_BASS[idx];
-      tone(fLead, 0.14, { type: "square", vol: 0.022 });
-      tone(fBass, 0.16, { type: "triangle", vol: 0.032 });
-      bgmStep++;
-    }, 185);
+      if (!sfxOn || !bgmOn || document.hidden) { bgmNextTime = 0; return; }
+      const now = ac.currentTime;
+      if (bgmNextTime < now) bgmNextTime = now + 0.05;
+      while (bgmNextTime < now + BGM_LOOKAHEAD_SECONDS) {
+        scheduleBgmStep(bgmStep, bgmNextTime - now);
+        bgmNextTime += BGM_STEP_SECONDS;
+        bgmStep++;
+      }
+    }, BGM_TICK_MS);
   }
 
   function stopBgm() {

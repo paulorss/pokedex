@@ -321,6 +321,7 @@ function renderGrid() {
     : `${list.length.toLocaleString("pt-BR")} de ${ALL.length.toLocaleString("pt-BR")} Pokémon`;
   if (!list.length) {
     $("#grid").innerHTML = `<div class="empty"><b>Nenhum Pokémon encontrado</b>Confira a grafia, busque pelo número ou troque o tipo.<br><button class="btn" id="btnClearSearch">Limpar busca</button></div>`;
+    document.dispatchEvent(new CustomEvent("gridrender"));
     return;
   }
   $("#grid").innerHTML = list.map((p) => {
@@ -331,6 +332,7 @@ function renderGrid() {
       <div class="nm">${esc(p.name)}</div><div class="types">${p.types.map(typeBadge).join("")}</div>
     </button>`;
   }).join("");
+  document.dispatchEvent(new CustomEvent("gridrender"));
 }
 
 /* ---------------- eventos ---------------- */

@@ -260,3 +260,25 @@
   .vs-intro.show { animation-duration: .6s; }
   .vs-side, .vs-team span, .vs-mark span, .sel-callout.show, .sel-info.swap > * { animation-duration: .15s; animation-delay: 0s; }
 }
+
+/* ---------- Pokédex: palco de destaque sobre a grade ---------- */
+.dex-stage { --ink: #060914; --fg-soft: #a9cbbf; --ember: #ffb23e; --ember-ink: #2b1a00; color: #eef7f2; cursor: pointer;
+  min-height: 300px; max-height: 46vh; margin-bottom: 10px; }
+.dex-stage .sel-info { --el: var(--type, #a8b2bd); width: min(40%, 360px); }
+.dex-stage .si-name { font-style: italic; text-transform: uppercase; letter-spacing: -.01em; }
+.dex-stage .si-types { margin: 0; }
+.dex-stage .si-stats { min-height: 40px; }
+.dex-stage .sel-flat img { max-width: 100%; max-height: 100%; object-fit: contain; }
+#view-browse .card.cursor, #view-browse .card:focus-visible { transform: translateY(-4px) scale(1.06); z-index: 2; outline: 0; position: relative;
+  box-shadow: inset 0 0 0 2px #fff, 0 0 0 2px var(--type), 0 0 22px var(--type), 0 14px 20px -10px #000; }
+#view-browse .card.cursor { animation: dex-cursor .8s ease-in-out infinite alternate; }
+#view-browse .card.cursor img { transform: scale(1.16); }
+@keyframes dex-cursor { to { box-shadow: inset 0 0 0 2px #fff, 0 0 0 4px var(--type), 0 0 34px var(--type), 0 14px 20px -10px #000; } }
+@media (max-width: 700px) {
+  .dex-stage { height: 300px; min-height: 0; }
+  .dex-stage .sel-info { width: 60%; }
+  .dex-stage .si-tech { display: block; }
+  .dex-stage .si-stats { display: none; }
+  .dex-stage .si-name { font-size: 26px; }
+}
+@media (prefers-reduced-motion: reduce) { #view-browse .card.cursor { animation: none; } }

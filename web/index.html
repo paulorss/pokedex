@@ -10,8 +10,8 @@
   <title>Pokédex Local</title>
   <link rel="icon" href="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png" />
   <link rel="stylesheet" href="style.css" />
-  <link rel="stylesheet" href="battle.css" />
-  <link rel="stylesheet" href="battle_aaa.css" />
+  <link rel="stylesheet" href="battle.css?v=20261112" />
+  <link rel="stylesheet" href="battle_aaa.css?v=20261112" />
 </head>
 <body>
   <!-- ===== Ícones (um único traço, 24×24) ===== -->
@@ -118,6 +118,12 @@
         <div class="browse-bar">
           <input id="search" type="search" placeholder="Buscar por nome, número ou tipo" aria-label="Buscar Pokémon" />
           <select id="typeFilter" aria-label="Filtrar por tipo"><option value="">Todos os tipos</option></select>
+        </div>
+        <div class="sel-stage dex-stage" id="dexStage" title="Abrir a ficha do Pokémon em destaque">
+          <div class="sel-canvas" aria-hidden="true"></div>
+          <div class="sel-vignette" aria-hidden="true"></div>
+          <div class="sel-info" aria-live="polite"></div>
+          <div class="sel-flash" aria-hidden="true"></div>
         </div>
         <p id="gridCount" class="grid-count" aria-live="polite"></p>
         <div id="grid" class="grid"></div>
@@ -397,11 +403,12 @@
     </div>
   </dialog>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=20261112"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" defer></script>
-  <script src="battle3d.js" defer></script>
-  <script src="select3d.js" defer></script>
-  <script src="battle_audio.js" defer></script>
-  <script src="battle.js" defer></script>
+  <script src="battle3d.js?v=20261112" defer></script>
+  <script src="select3d.js?v=20261112" defer></script>
+  <script src="dex_stage.js?v=20261112" defer></script>
+  <script src="battle_audio.js?v=20261112" defer></script>
+  <script src="battle.js?v=20261112" defer></script>
 </body>
 </html>
