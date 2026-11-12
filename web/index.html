@@ -11,6 +11,7 @@
   <link rel="icon" href="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png" />
   <link rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="battle.css" />
+  <link rel="stylesheet" href="battle_aaa.css" />
 </head>
 <body>
   <!-- ===== Ícones (um único traço, 24×24) ===== -->
@@ -188,12 +189,12 @@
             </details>
           </div>
 
-          <!-- 3. Draft -->
-          <div id="duelDraft" hidden>
-            <div class="duel-panel draft-head">
+          <!-- 3. Seleção de lutadores -->
+          <div id="duelDraft" class="select-screen" hidden>
+            <div class="sel-hud">
               <div class="timer" id="draftTimer" role="timer" aria-label="Tempo de escolha"><b>60</b></div>
               <div class="draft-status">
-                <b>Monte seu trio Pokédex</b>
+                <b class="sel-title">Escolha seu trio</b>
                 <span id="draftOpp"></span>
                 <div class="budget" aria-live="polite"><div class="budget-bar"><i id="budgetFill"></i></div><span id="budgetText"></span></div>
               </div>
@@ -202,7 +203,17 @@
                 <button id="btnLockTeam" type="button" class="btn shoot" disabled><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span>Confirmar trio</span></button>
               </div>
             </div>
-            <div id="draftSlots" class="draft-slots"></div>
+
+            <div class="sel-stage" id="selStage">
+              <div id="select3d" class="sel-canvas" aria-hidden="true"></div>
+              <div class="sel-vignette" aria-hidden="true"></div>
+              <div class="sel-info" id="selInfo" aria-live="polite"></div>
+              <div class="sel-vs" id="selVs"></div>
+              <div id="draftSlots" class="draft-slots"></div>
+              <div class="sel-callout" id="selCallout" aria-hidden="true"></div>
+              <div class="sel-flash" id="selFlash" aria-hidden="true"></div>
+            </div>
+
             <div class="draft-toolbar">
               <input id="draftSearch" type="search" class="form-input" placeholder="Buscar entre 1.025 Pokémon por nome ou #número..." aria-label="Buscar Pokémon para o trio" />
               <select id="draftSort" class="form-input" aria-label="Ordenar Pokémon">
@@ -216,7 +227,7 @@
             </div>
             <div id="elementChips" class="chips" role="group" aria-label="Filtrar por tipo Pokémon"></div>
             <p id="draftMatchCount" class="draft-match-count"></p>
-            <div id="rosterGrid" class="roster"></div>
+            <div id="rosterGrid" class="roster" aria-label="Grade de lutadores"></div>
             <div id="rosterMoreWrap" class="roster-more" hidden>
               <button id="btnLoadMoreRoster" type="button" class="btn ghost">Carregar mais Pokémon</button>
             </div>
@@ -234,14 +245,15 @@
               <div class="announcer" id="announcer" aria-live="assertive"></div>
               <div class="chat-bubbles" id="chatBubbles" aria-live="polite"></div>
               <div class="floats" id="floats" aria-hidden="true"></div>
+              <div class="vs-intro" id="vsIntro" aria-hidden="true"></div>
             </div>
             <div class="duel-panel controls-panel">
               <div class="turn-bar" id="turnBar"><i></i></div>
               <p class="turn-hint" id="turnHint" aria-live="polite"></p>
               <div class="actions" id="actions">
-                <button class="act" data-kind="golpe"><svg class="ic" aria-hidden="true"><use href="#i-duel"/></svg><b>Golpe</b><small>+1 Foco</small></button>
-                <button class="act tech" data-kind="tecnica"><svg class="ic" aria-hidden="true"><use href="#i-spark"/></svg><b id="techName">Técnica</b><small id="techInfo">3 de Foco</small></button>
-                <button class="act" data-kind="guarda"><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg><b>Guarda</b><small>Amortece, +2 Foco</small></button>
+                <button class="act" data-kind="golpe"><kbd>1</kbd><svg class="ic" aria-hidden="true"><use href="#i-duel"/></svg><b>Golpe</b><small>+1 Foco</small></button>
+                <button class="act tech" data-kind="tecnica"><kbd>2</kbd><svg class="ic" aria-hidden="true"><use href="#i-spark"/></svg><b id="techName">Técnica</b><small id="techInfo">3 de Foco</small></button>
+                <button class="act" data-kind="guarda"><kbd>3</kbd><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg><b>Guarda</b><small>Amortece, +2 Foco</small></button>
               </div>
               <div class="bench" id="bench" aria-label="Trocar de Pokémon"></div>
               <div class="quick-chat" id="quickChat" aria-label="Enviar emojis e mensagens rápidas">
@@ -388,6 +400,7 @@
   <script src="app.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" defer></script>
   <script src="battle3d.js" defer></script>
+  <script src="select3d.js" defer></script>
   <script src="battle_audio.js" defer></script>
   <script src="battle.js" defer></script>
 </body>

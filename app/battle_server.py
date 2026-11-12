@@ -219,7 +219,7 @@ async def start_battle(room_id: str) -> None:
 
 async def run_round_loop(room_id: str) -> None:
     """Uma rodada por volta: espera as duas escolhas (ou o tempo), resolve e dá tempo para a animação."""
-    await asyncio.sleep(2.2)  # entrada dos Encantados na arena
+    await asyncio.sleep(3.6)  # abertura VS + entrada dos Pokemon na arena
     while True:
         room = active_rooms.get(room_id)
         if not room or room["closed"]:

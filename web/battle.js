@@ -10,7 +10,11 @@
   const TOAST_MS = 4200;
   const TICKER_LINES = 3;
   const LOW_HP = 0.25, MID_HP = 0.5;
-  const PAGE_STEP = 48;
+  const PAGE_STEP = 60;
+  const VS_INTRO_MS = 1700;
+  const PREVIEW_DELAY_MS = 55;
+  const STAT_ROWS = [["hp", "HP"], ["atk", "ATQ"], ["def", "DEF"], ["spd", "VEL"]];
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const STARTER_AVATARS = [1, 4, 7, 25, 39, 94, 133, 143, 150, 248, 448, 658];
 
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -24,6 +28,7 @@
     role: 1, roomId: null, opponent: null, game: null, live: null,
     team: [], locked: false, filter: "", search: "", sort: "id", limit: PAGE_STEP, avatar: 25, mode: "login",
     inviteId: null, inviteTimer: null, offlineTarget: null, arena: null, chosen: null, queue: Promise.resolve(),
+    stage: null, preview: null, previewTimer: null, statMax: null, justPicked: null,
   };
 
   function setCooldowns(raw) {
@@ -132,6 +137,7 @@
   function show(id) {
     PANELS.forEach((p) => { $(`#${p}`).hidden = p !== id; });
     if (S.arena) { if (id === "duelArena" && battleTabActive()) S.arena.start(); else S.arena.stop(); }
+    if (id === "duelDraft") syncStage(); else disposeStage();
   }
   const battleTabActive = () => $("#view-battle").classList.contains("active");
 
@@ -274,16 +280,109 @@
     else list.sort((a, b) => a.id - b.id);
     return list;
   }
+  /* palco 3D da seleção (com alternativa em imagem quando não há WebGL) */
+  function stageFallback(container) {
+    container.innerHTML = `<div class="sel-flat"></div>`;
+    const host = $(".sel-flat", container);
+    return {
+      show(def) { host.className = `sel-flat e-${def.element}`; host.innerHTML = portrait(def, true); },
+      slam() { host.classList.remove("slam"); void host.offsetWidth; host.classList.add("slam"); },
+      start() {}, stop() {}, dispose() { container.innerHTML = ""; },
+    };
+  }
+  function syncStage() {
+    if (!S.stage) {
+      const container = $("#select3d");
+      container.innerHTML = "";
+      S.stage = (window.Select3D && window.Select3D.create(container)) || stageFallback(container);
+      const def = S.preview ? creature(S.preview) : null;
+      if (def) S.stage.show(def);
+    }
+    if (battleTabActive()) S.stage.start(); else S.stage.stop();
+  }
+  function disposeStage() {
+    clearTimeout(S.previewTimer);
+    if (S.stage) { S.stage.dispose(); S.stage = null; }
+  }
+  function statMax() {
+    if (!S.statMax) {
+      S.statMax = Object.fromEntries(STAT_ROWS.map(([key]) => [key, Math.max(1, ...S.rules.roster.map((c) => c[key] || 0))]));
+    }
+    return S.statMax;
+  }
+  function restart(el, cls) {
+    el.classList.remove(cls);
+    void el.offsetWidth;
+    el.classList.add(cls);
+  }
+  function callout(text, kind = "") {
+    const el = $("#selCallout");
+    el.textContent = text;
+    el.className = `sel-callout ${kind}`;
+    restart(el, "show");
+  }
+  function stageFlash() { restart($("#selFlash"), "show"); }
+
+  /** Painel do lutador em destaque: nome, tipos, atributos e técnica. */
+  function renderPreview() {
+    const c = S.preview ? creature(S.preview) : null;
+    const el = $("#selInfo");
+    if (!c) { el.innerHTML = ""; return; }
+    const max = statMax(), koSec = cooldownLeft(c.id);
+    const types = c.types || [c.element];
+    el.className = `sel-info e-${c.element}`;
+    el.innerHTML = `
+      <span class="si-no">Nº ${String(c.id).padStart(4, "0")}</span>
+      <b class="si-name">${esc(c.name)}</b>
+      <div class="si-types">${types.map(elChip).join("")}<span class="si-cost">${c.cost} SP</span></div>
+      <dl class="si-stats">${STAT_ROWS.map(([key, label], i) =>
+        `<div style="--i:${i}"><dt>${label}</dt><dd><i style="--v:${Math.min(1, (c[key] || 0) / max[key]).toFixed(3)}"></i></dd><span>${c[key] ?? "-"}</span></div>`).join("")}</dl>
+      <p class="si-tech"><b>${esc(c.tech.name)}</b>${esc(c.tech.effect_text)}</p>
+      ${koSec > 0 ? `<p class="si-ko">Centro Pokémon · volta em ${formatCooldown(koSec)}</p>` : ""}`;
+    restart(el, "swap");
+  }
+  function setPreview(id) {
+    const def = creature(id);
+    if (!def || S.preview === def.id) return;
+    S.preview = def.id;
+    renderPreview();
+    if (S.stage) S.stage.show(def);
+    $("#rosterGrid").querySelectorAll(".pick.cursor").forEach((n) => n.classList.remove("cursor"));
+    const tile = $(`#rosterGrid [data-pick="${def.id}"]`);
+    if (tile) tile.classList.add("cursor");
+  }
+  function queuePreview(id) {
+    clearTimeout(S.previewTimer);
+    S.previewTimer = setTimeout(() => setPreview(id), PREVIEW_DELAY_MS);
+  }
+  function renderSlots() {
+    const r = S.rules;
+    $("#draftSlots").innerHTML = Array.from({ length: r.team_size }, (_, i) => {
+      const c = S.team[i] ? creature(S.team[i]) : null;
+      if (!c) return `<div class="slot"><i class="slot-n">${i + 1}</i><span>Vaga livre</span></div>`;
+      const fresh = S.justPicked === c.id ? " fresh" : "";
+      return `<button class="slot filled e-${c.element}${fresh}" data-remove="${c.id}" ${S.locked ? "disabled" : ""} aria-label="Remover ${esc(c.name)}">
+        <i class="slot-n">${i + 1}</i>${portrait(c, true)}<span><b>${esc(c.name)}</b>${esc((c.types_pt || [elName(c.element)]).join(" / "))} · ${c.cost} SP</span></button>`;
+    }).join("");
+  }
+  function pickTile(c, left) {
+    const r = S.rules;
+    const order = S.team.indexOf(c.id);
+    const picked = order >= 0;
+    const koSec = cooldownLeft(c.id);
+    const blocked = S.locked || (!picked && (koSec > 0 || S.team.length >= r.team_size || c.cost > left));
+    const cls = [`pick e-${c.element}`, koSec > 0 ? "ko" : "", blocked ? "blocked" : "", S.preview === c.id ? "cursor" : "", S.justPicked === c.id ? "fresh" : ""].filter(Boolean).join(" ");
+    const label = `#${c.id} ${c.name}, ${(c.types_pt || [elName(c.element)]).join("/")}, ${c.cost} SP${koSec > 0 ? ", em recuperação" : ""}`;
+    return `<button class="${cls}" data-pick="${c.id}" aria-pressed="${picked}" aria-disabled="${blocked}" aria-label="${esc(label)}">
+      ${portrait(c)}<span class="pick-no">${c.id}</span><span class="cost" title="Custo em Stamina">${c.cost}</span>
+      <b>${esc(c.name)}</b>${picked ? `<i class="pick-order">${order + 1}</i>` : ""}
+      ${koSec > 0 ? `<span class="ko-badge" title="Derrotado recentemente">${formatCooldown(koSec)}</span>` : ""}</button>`;
+  }
   function renderDraft() {
     const r = S.rules, cost = teamCost(), left = r.team_budget - cost;
     $("#budgetFill").style.transform = `scaleX(${Math.min(1, cost / r.team_budget)})`;
     $("#budgetText").textContent = `${cost} / ${r.team_budget} SP (${left} SP livres)`;
-    $("#draftSlots").innerHTML = Array.from({ length: r.team_size }, (_, i) => {
-      const c = S.team[i] ? creature(S.team[i]) : null;
-      return c
-        ? `<button class="slot filled e-${c.element}" data-remove="${c.id}" ${S.locked ? "disabled" : ""} aria-label="Remover ${esc(c.name)}">${portrait(c)}<span><b>#${c.id} ${esc(c.name)}</b>${esc((c.types_pt || [elName(c.element)]).join(" / "))} · ${c.cost} SP</span></button>`
-        : `<div class="slot">Vaga ${i + 1}</div>`;
-    }).join("");
+    renderSlots();
     $("#elementChips").innerHTML = [["", "Todos"], ...Object.keys(r.elements).map((el) => [el, elName(el)])].map(([el, name]) =>
       `<button class="chip ${el ? `e-${el}` : ""}" aria-pressed="${S.filter === el}" data-filter="${el}">${el ? elIcon(el) : ""}${esc(name)}</button>`).join("");
 
@@ -291,20 +390,18 @@
     const visible = filtered.slice(0, S.limit);
     $("#draftMatchCount").textContent = `Exibindo ${visible.length} de ${filtered.length} Pokémon disponíveis`;
     $("#rosterMoreWrap").hidden = visible.length >= filtered.length;
+    if (!S.preview && visible.length) { S.preview = visible[0].id; renderPreview(); if (S.stage) S.stage.show(visible[0]); }
 
-    $("#rosterGrid").innerHTML = visible.map((c) => {
-      const picked = S.team.includes(c.id);
-      const koSec = cooldownLeft(c.id);
-      const blocked = S.locked || (!picked && (koSec > 0 || S.team.length >= r.team_size || c.cost > left));
-      return `<button class="pick e-${c.element}${koSec > 0 ? " ko" : ""}" data-pick="${c.id}" aria-pressed="${picked}" ${blocked ? "disabled" : ""}>
-        ${portrait(c)}<b>${elIcon(c.element)}#${c.id} ${esc(c.name)}</b><span class="cost" title="Custo em Stamina">${c.cost} SP</span>
-        <span class="meta">${esc((c.types_pt || [elName(c.element)]).join("/"))} · HP ${c.hp} · Atq ${c.atk} · Def ${c.def} · Vel ${c.spd}</span>
-        <span class="tech">${esc(c.tech.name)}: ${esc(c.tech.effect_text)}</span>
-        ${koSec > 0 ? `<span class="ko-badge" title="Derrotado recentemente">Centro Pokémon · ${formatCooldown(koSec)}</span>` : ""}</button>`;
-    }).join("") || `<p style="grid-column:1/-1;color:var(--fg-soft)">Nenhum Pokémon encontrado para este filtro.</p>`;
+    const grid = $("#rosterGrid");
+    const focusId = grid.contains(document.activeElement) ? document.activeElement.dataset.pick : null;
+    grid.innerHTML = visible.map((c) => pickTile(c, left)).join("")
+      || `<p style="grid-column:1/-1;color:var(--fg-soft)">Nenhum Pokémon encontrado para este filtro.</p>`;
+    if (focusId) $(`[data-pick="${focusId}"]`, grid)?.focus({ preventScroll: true });
+    S.justPicked = null;
 
     const btn = $("#btnLockTeam");
     btn.disabled = S.locked || S.team.length !== r.team_size;
+    btn.classList.toggle("ready", !S.locked && S.team.length === r.team_size);
     $("span", btn).textContent = S.locked ? "Trio confirmado" : S.team.length === r.team_size ? "Confirmar trio" : `Escolha ${r.team_size - S.team.length}`;
     if ($("#btnAutoPick")) $("#btnAutoPick").disabled = S.locked || S.team.length >= r.team_size;
   }
@@ -330,16 +427,52 @@
       spent += chosen.cost;
     }
     S.team = picked;
+    const lead = creature(picked[picked.length - 1]);
+    if (lead) { setPreview(lead.id); callout("Trio sorteado!"); }
+    if (S.stage) S.stage.slam(0.8);
+    stageFlash();
     renderDraft();
     send("draft_update", { room_id: S.roomId, team_ids: S.team, locked: false });
   }
+  /** Motivo pelo qual o Pokémon não pode entrar no trio agora (ou "" quando pode). */
+  function pickBlockReason(c) {
+    if (cooldownLeft(c.id) > 0) return "Em recuperação";
+    if (S.team.length >= S.rules.team_size) return "Trio completo";
+    if (c.cost > S.rules.team_budget - teamCost()) return "Sem Stamina";
+    return "";
+  }
   function togglePick(id) {
-    if (S.locked || (!S.team.includes(id) && cooldownLeft(id) > 0)) return;
+    const c = creature(id);
+    if (S.locked || !c) return;
     sfx("unlock");
+    setPreview(id);
+    const removing = S.team.includes(id);
+    const reason = removing ? "" : pickBlockReason(c);
+    if (reason) { callout(reason, "deny"); buzz(30); return; }
     sfx("playSfx", "click");
-    S.team = S.team.includes(id) ? S.team.filter((x) => x !== id) : [...S.team, id];
+    S.team = removing ? S.team.filter((x) => x !== id) : [...S.team, id];
+    if (!removing) {
+      S.justPicked = id;
+      sfx("playSfx", "cutIn");
+      sfx("playCry", c.id, c.name, false);
+      callout(c.name);
+      stageFlash();
+      if (S.stage) S.stage.slam(0.75);
+    }
     renderDraft();
     send("draft_update", { room_id: S.roomId, team_ids: S.team, locked: false });
+  }
+  function lockTeam() {
+    if (S.locked || S.team.length !== S.rules.team_size) return;
+    S.locked = true;
+    sfx("unlock");
+    sfx("playSfx", "critImpact");
+    callout("Trio pronto!", "lock");
+    stageFlash();
+    if (S.stage) S.stage.slam(1);
+    buzz([40, 50, 90]);
+    renderDraft();
+    send("draft_update", { room_id: S.roomId, team_ids: S.team, locked: true });
   }
   function setDraftTimer(seconds) {
     const el = $("#draftTimer");
@@ -348,8 +481,35 @@
     $("b", el).textContent = seconds;
   }
   function setOpponentDraft(count, locked) {
-    const name = S.opponent.display_name;
-    $("#draftOpp").textContent = locked ? `${name} já confirmou o trio.` : `${name} escolheu ${count} de ${S.rules.team_size}.`;
+    const name = S.opponent.display_name, size = S.rules.team_size;
+    $("#draftOpp").textContent = locked ? `${name} já confirmou o trio.` : `${name} escolheu ${count} de ${size}.`;
+    const face = avatarOf(S.opponent.avatar_id);
+    const el = $("#selVs");
+    el.className = `sel-vs e-${face.element}${locked ? " locked" : ""}`;
+    el.innerHTML = `
+      <span class="vs-tag">VS</span>
+      <span class="vs-face">${portrait(face, true)}</span>
+      <b>${esc(name)}</b>
+      <small>${S.opponent.is_bot ? "IA" : `${S.opponent.rating ?? 1000} pts`} · ${locked ? "PRONTO" : "escolhendo"}</small>
+      <span class="vs-pips">${Array.from({ length: size }, (_, i) => `<i class="${i < count ? "on" : ""}"></i>`).join("")}</span>`;
+  }
+
+  /* ---------- abertura "VS" ---------- */
+  async function playVsIntro(g) {
+    const host = $("#vsIntro");
+    const side = (player, cls) => {
+      const team = teamOf(g, player) || [];
+      return `<div class="vs-side ${cls} e-${team[0]?.element || "normal"}">
+        <div class="vs-team">${team.map((c, i) => `<span class="e-${c.element}" style="--i:${i}">${portrait(c, true).replace(' loading="lazy"', "")}</span>`).join("")}</div>
+        <b>${esc(g[`p${player}_name`])}</b></div>`;
+    };
+    host.innerHTML = `${side(S.role, "me")}${side(3 - S.role, "foe")}<div class="vs-mark"><span>VS</span></div>`;
+    host.className = "vs-intro show";
+    sfx("playSfx", "cutIn");
+    setTimeout(() => sfx("playSfx", "critImpact"), 420);
+    await sleep(reduceMotion ? 600 : VS_INTRO_MS);
+    host.className = "vs-intro";
+    host.innerHTML = "";
   }
 
   /* ---------- arena ---------- */
@@ -391,6 +551,7 @@
   function buildPlate(side) {
     const pips = Array.from({ length: S.rules.max_foco }, () => "<i></i>").join("");
     $(side === "me" ? "#plateMe" : "#plateFoe").innerHTML = `
+      <span class="plate-face" data-face></span>
       <div class="plate-owner"><span data-owner></span><span class="ready" data-ready hidden>pronto</span></div>
       <div class="plate-top"><span data-el></span><b data-name></b><span data-hp></span></div>
       <div class="hp" data-bar><i class="ghost"></i><i class="fill"></i></div>
@@ -401,6 +562,8 @@
     const root = $(side === "me" ? "#plateMe" : "#plateFoe");
     root.className = `plate ${side} e-${c.element}`;
     $("[data-owner]", root).textContent = g[`p${player}_name`];
+    const face = $("[data-face]", root);
+    if (face.dataset.id !== String(c.id)) { face.dataset.id = String(c.id); face.innerHTML = portrait(c); }
     $("[data-el]", root).innerHTML = elIcon(c.element);
     $("[data-name]", root).textContent = c.name;
     $("[data-hp]", root).textContent = `${c.hp}/${c.max_hp}`;
@@ -608,6 +771,7 @@
     S.roomId = null; S.game = null; S.chosen = null; S.queue = Promise.resolve();
     if ($("#animeCutIn")) { $("#animeCutIn").className = "anime-cutin"; $("#animeCutIn").innerHTML = ""; }
     if ($("#speedlines")) $("#speedlines").className = "speedlines";
+    if ($("#vsIntro")) { $("#vsIntro").className = "vs-intro"; $("#vsIntro").innerHTML = ""; }
     if (S.arena) { S.arena.dispose(); S.arena = null; }
     for (const id of ["duelResult", "duelConfirm"]) if ($(`#${id}`).open) $(`#${id}`).close();
     if (S.user) enterLobby();
@@ -694,7 +858,7 @@
     battle_matched(msg) {
       if (S.arena) { S.arena.dispose(); S.arena = null; }
       if (msg.cooldowns) setCooldowns(msg.cooldowns);
-      Object.assign(S, { roomId: msg.room_id, role: msg.role, opponent: msg.opponent, game: msg.state, team: [], locked: false, filter: "", search: "", sort: "id", limit: PAGE_STEP });
+      Object.assign(S, { roomId: msg.room_id, role: msg.role, opponent: msg.opponent, game: msg.state, team: [], locked: false, filter: "", search: "", sort: "id", limit: PAGE_STEP, preview: null, justPicked: null });
       if ($("#draftSearch")) $("#draftSearch").value = "";
       if ($("#draftSort")) $("#draftSort").value = "id";
       if ($("#rematchBanner")) { $("#rematchBanner").hidden = true; $("#rematchBanner").innerHTML = ""; }
@@ -719,9 +883,12 @@
         $("#roundChip").textContent = "Preparar";
         renderControls(false);
         setHint("Os Pokémon entram na arena!");
-        createArena();
         show("duelArena");
+        createArena();
+        S.arena.start();
         updateAudioButtons();
+        await playVsIntro(S.game);
+        if (!S.roomId || !S.arena) return;
         sfx("startBgm");
         sfx("playSfx", "sendOut");
         const meFirst = activeOf(S.game, S.role);
@@ -838,7 +1005,27 @@
     });
     $("#btnOfflineCancel").addEventListener("click", () => $("#duelOffline").close());
 
-    $("#rosterGrid").addEventListener("click", (e) => { const b = e.target.closest("[data-pick]"); if (b) togglePick(Number(b.dataset.pick)); });
+    const grid = $("#rosterGrid");
+    grid.addEventListener("click", (e) => { const b = e.target.closest("[data-pick]"); if (b) togglePick(Number(b.dataset.pick)); });
+    grid.addEventListener("pointerover", (e) => {
+      if (e.pointerType !== "mouse") return;
+      const b = e.target.closest("[data-pick]");
+      if (b) queuePreview(Number(b.dataset.pick));
+    });
+    grid.addEventListener("focusin", (e) => { const b = e.target.closest("[data-pick]"); if (b) setPreview(Number(b.dataset.pick)); });
+    grid.addEventListener("keydown", (e) => {
+      const tiles = [...grid.querySelectorAll("[data-pick]")];
+      const at = tiles.indexOf(document.activeElement);
+      if (at < 0) return;
+      const cols = Math.max(1, tiles.filter((t) => t.offsetTop === tiles[0].offsetTop).length);
+      const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -cols, ArrowDown: cols }[e.key];
+      if (!step) return;
+      const next = tiles[at + step];
+      if (!next) return;
+      e.preventDefault();
+      next.focus();
+    });
+    $("#draftSlots").addEventListener("pointerover", (e) => { const b = e.target.closest("[data-remove]"); if (b) queuePreview(Number(b.dataset.remove)); });
     $("#draftSlots").addEventListener("click", (e) => { const b = e.target.closest("[data-remove]"); if (b) togglePick(Number(b.dataset.remove)); });
     $("#elementChips").addEventListener("click", (e) => {
       const b = e.target.closest("[data-filter]");
@@ -862,11 +1049,7 @@
       renderDraft();
     });
     $("#btnAutoPick").addEventListener("click", autoFillDraft);
-    $("#btnLockTeam").addEventListener("click", () => {
-      S.locked = true;
-      renderDraft();
-      send("draft_update", { room_id: S.roomId, team_ids: S.team, locked: true });
-    });
+    $("#btnLockTeam").addEventListener("click", lockTeam);
 
     $("#actions").addEventListener("click", (e) => { sfx("unlock"); const b = e.target.closest(".act"); if (b && !b.disabled) { sfx("playSfx", "click"); choose({ kind: b.dataset.kind }); } });
     $("#bench").addEventListener("click", (e) => { sfx("unlock"); const b = e.target.closest("[data-switch]"); if (b && !b.disabled) { sfx("playSfx", "click"); choose({ kind: "trocar", idx: Number(b.dataset.switch) }); } });
@@ -976,6 +1159,7 @@
   document.addEventListener("viewchange", (e) => {
     if (e.detail === "battle") boot();
     if (S.arena) { if (e.detail === "battle" && !$("#duelArena").hidden) S.arena.start(); else S.arena.stop(); }
+    if (S.stage) { if (e.detail === "battle") S.stage.start(); else S.stage.stop(); }
   });
   if (battleTabActive()) boot();
 })();
