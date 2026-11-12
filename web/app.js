@@ -147,6 +147,7 @@ function renderDetail(p, confidence = null) {
 function bindDetail(container, p) {
   container.querySelectorAll(".evo button").forEach((b) =>
     b.addEventListener("click", () => openModal(Number(b.dataset.id))));
+  if (window.EvoStage) window.EvoStage.mount(container, p);
   container.querySelector("[data-speak]")?.addEventListener("click", () => speak(p));
   container.querySelector("#btnTeachOpen")?.addEventListener("click", () => {
     populateTeachSelect(p.id);
